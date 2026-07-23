@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caopan.platform.geo.mapper.GeoCountryMapper">
+
+    <select id="listEnabled" resultType="com.caopan.platform.geo.entity.GeoCountry">
+        SELECT id, iso2, iso3, name, name_en AS nameEn, name_ch AS nameCh,
+               icon_base64 AS iconBase64, phone_code AS phoneCode, currency_code AS currencyCode,
+               max_level AS maxLevel, status, sort, created_at AS createdAt, updated_at AS updatedAt
+        FROM geo_country
+        WHERE status = 1
+        <if test="keyword != null and keyword != ''">
+            AND (name LIKE CONCAT('%', #{keyword}, '%')
+              OR name_en LIKE CONCAT('%', #{keyword}, '%')
+              OR name_ch LIKE CONCAT('%', #{keyword}, '%')
+              OR iso2 LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        ORDER BY sort ASC, id ASC
+    </select>
+</mapper>
