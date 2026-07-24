@@ -24,6 +24,7 @@
         <module>platform-geo-service</module>
         <module>platform-geo-web</module>
         <module>platform-geo-client</module>
+        <module>platform-web-ui</module>
         <module>platform-bootstrap</module>
     </modules>
 
