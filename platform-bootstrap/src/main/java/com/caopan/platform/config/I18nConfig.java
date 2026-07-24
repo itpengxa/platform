@@ -11,11 +11,16 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * 国际化 MessageSource / Locale 解析（W10）。
+ * 国际化配置（platform-bootstrap，W10）。
+ * <p>装配 MessageSource（classpath:messages）与 Accept-Language LocaleResolver，
+ * 供错误文案中/英切换；缺省简体中文。与请求参数 lang 配合见 GlobalExceptionHandler。</p>
  */
 @Configuration
 public class I18nConfig {
 
+    /**
+     * @return 可热加载的 MessageSource
+     */
     @Bean
     public ReloadableResourceBundleMessageSource messageSource() {
         ReloadableResourceBundleMessageSource source = new ReloadableResourceBundleMessageSource();
@@ -26,6 +31,9 @@ public class I18nConfig {
         return source;
     }
 
+    /**
+     * @return 基于 Accept-Language 的 Locale 解析器
+     */
     @Bean
     public LocaleResolver localeResolver() {
         AcceptHeaderLocaleResolver resolver = new AcceptHeaderLocaleResolver();

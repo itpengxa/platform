@@ -10,7 +10,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 /**
- * 启动门禁：online/prod 开启鉴权时必须配置非空 Token，避免空口令误开放。
+ * 鉴权启动门禁（GEO-001 / platform-bootstrap）。
+ * <p>应用启动时检查：若开启 {@code platform.geo.auth.enabled}，则 Token 必须非空且长度足够，
+ * 避免空口令误开放。online/prod profile 下开启鉴权时打确认日志；
+ * test 可关闭鉴权仅用于内网联调。</p>
  */
 @Component
 public class GeoAuthStartupGuard implements ApplicationRunner {
@@ -21,6 +24,13 @@ public class GeoAuthStartupGuard implements ApplicationRunner {
     private final boolean authEnabled;
     private final String authToken;
 
+    /**
+     * 注入依赖构造。
+     *
+     * @param environment 用于识别 active profiles（test/online/prod）
+     * @param authEnabled 是否启用内部鉴权
+     * @param authToken   配置的 Token
+     */
     public GeoAuthStartupGuard(
             Environment environment,
             @Value("${platform.geo.auth.enabled:false}") boolean authEnabled,
@@ -30,6 +40,11 @@ public class GeoAuthStartupGuard implements ApplicationRunner {
         this.authToken = authToken == null ? "" : authToken.trim();
     }
 
+    /**
+     * 启动后校验鉴权配置；Token 非法时抛 {@link IllegalStateException} 阻止启动。
+     *
+     * @param args 启动参数
+     */
     @Override
     public void run(ApplicationArguments args) {
         if (!authEnabled) {

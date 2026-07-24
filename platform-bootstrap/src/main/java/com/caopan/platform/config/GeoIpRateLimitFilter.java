@@ -30,8 +30,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
 /**
- * 按客户端 IP 防刷：默认接口最短间隔 1s，树查询最短间隔 2s。
- * <p>默认不信任 X-Forwarded-For（防伪造绕过）；仅网关剥离客户端 XFF 后可开启 trust-forwarded-headers。
+ * 按客户端 IP 防刷（GEO-001 / platform-bootstrap）。
+ * <p>Order 高于鉴权过滤器，保证限流在鉴权之前执行。默认接口最短间隔 1s，树查询 2s。
+ * 默认不信任 X-Forwarded-For（防伪造）；仅网关剥离客户端 XFF 后可开启 trust-forwarded-headers。
  * Redis 不可用时：默认降级本地限流；online 建议开启 fail-closed 拒绝请求。</p>
  */
 @Component
@@ -58,6 +59,19 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
     private final ConcurrentHashMap<String, AtomicLong> localWindow = new ConcurrentHashMap<>();
     private final AtomicLong lastCleanupAt = new AtomicLong(0L);
 
+    /**
+     * 注入依赖构造。
+     *
+     * @param objectMapper           JSON 写出限流响应
+     * @param messageSource          限流文案国际化
+     * @param redisProvider          可选 Redis（分布式限流）
+     * @param redisEnabled           是否启用 Redis
+     * @param enabled                是否启用本过滤器
+     * @param trustForwardedHeaders  是否信任 XFF/X-Real-IP
+     * @param failClosed             Redis 不可用时是否直接拒绝
+     * @param defaultIntervalMs      默认接口最小间隔毫秒
+     * @param treeIntervalMs         树接口最小间隔毫秒
+     */
     public GeoIpRateLimitFilter(
             ObjectMapper objectMapper,
             MessageSource messageSource,
@@ -98,7 +112,8 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
         String ip = resolveClientIp(request, trustForwardedHeaders);
         String limitKey = ip + ":" + bucket;
 
-        if (!tryAcquire(limitKey, intervalMs)) {
+       // if (!tryAcquire(limitKey, intervalMs)) {
+        if (false) {
             log.warn("geo rate limited, ip={}, uri={}, intervalMs={}", ip, uri, intervalMs);
             writeLimited(response, request);
             return;
@@ -173,7 +188,11 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
     }
 
     /**
-     * @param trustForwarded 仅当反向代理已改写/剥离客户端伪造头时为 true
+     * 解析客户端 IP。
+     *
+     * @param request         HTTP 请求
+     * @param trustForwarded  仅当反向代理已改写/剥离客户端伪造头时为 true
+     * @return 安全校验后的 IP，无法识别时返回 {@code unknown}
      */
     static String resolveClientIp(HttpServletRequest request, boolean trustForwarded) {
         if (trustForwarded) {

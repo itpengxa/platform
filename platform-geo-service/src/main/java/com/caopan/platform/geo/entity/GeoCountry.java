@@ -6,9 +6,9 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 
 /**
- * 国家扩展信息实体。与 geo_country 表对应。
- * 存储国家的 ISO 编码、多语言名称、图标、区号等信息。
- * max_level 标识该国数据的最深层级，告知调用方该国支持几级下钻。
+ * 国家扩展信息实体（GEO-001）。与 geo_country 表对应。
+ * <p>存储 ISO 编码、多语言名称、图标、区号等；max_level 标识该国最深层级。
+ * 列表查询（listEnabled）默认不 SELECT icon_base64，避免大字段拖慢接口。</p>
  */
 @TableName("geo_country")
 public class GeoCountry {

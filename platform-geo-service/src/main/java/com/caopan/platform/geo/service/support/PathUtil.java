@@ -9,15 +9,15 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 2026-07-24 GEO-001 path 解析
+ * 物化路径解析工具（GEO-001 / platform-geo-service）。
+ * <p>将 geo_region.path（如 {@code /1/200000001/300000010/}）拆成自根到叶的 ID 列表，
+ * 供祖先链回显与搜索 fullPathName 组装。非法数字片段跳过并记警告日志。</p>
  */
 public final class PathUtil {
 
     private static final Logger log = LoggerFactory.getLogger(PathUtil.class);
 
-    /**
-     * 构造 PathUtil。
-     */
+    /** 工具类，禁止实例化 */
     private PathUtil() {
     }
 

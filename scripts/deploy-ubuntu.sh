@@ -102,22 +102,35 @@ if ! pgrep mysqld &>/dev/null; then
 fi
 
 log "[3/7] 配置 MySQL 数据库和用户..."
-mysql -u root <<MYSQL_SCRIPT 2>/dev/null || mysql -u root -p"$MYSQL_ROOT_PASS" <<MYSQL_SCRIPT 2>/dev/null || {
-    # 可能 root 有随机密码，尝试无密码 sudo
-    mysql <<MYSQL_SCRIPT 2>/dev/null || err "无法连接 MySQL，请手动执行数据库初始化"
-}
-ALTER USER 'root'@'localhost' IDENTIFIED BY '$MYSQL_ROOT_PASS';
+
+# 写入 SQL 到临时文件，避免 heredoc 在 || 链中的语法问题
+cat > /tmp/init_mysql.sql <<'SQLEOF'
+ALTER USER 'root'@'localhost' IDENTIFIED BY 'MYSQL_ROOT_PASS';
 FLUSH PRIVILEGES;
-CREATE DATABASE IF NOT EXISTS \`$MYSQL_DB\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '$MYSQL_USER'@'localhost' IDENTIFIED BY '$MYSQL_PASS';
-CREATE USER IF NOT EXISTS '$MYSQL_USER'@'127.0.0.1' IDENTIFIED BY '$MYSQL_PASS';
-CREATE USER IF NOT EXISTS '$MYSQL_USER'@'%' IDENTIFIED BY '$MYSQL_PASS';
-GRANT ALL PRIVILEGES ON \`$MYSQL_DB\`.* TO '$MYSQL_USER'@'localhost';
-GRANT ALL PRIVILEGES ON \`$MYSQL_DB\`.* TO '$MYSQL_USER'@'127.0.0.1';
-GRANT ALL PRIVILEGES ON \`$MYSQL_DB\`.* TO '$MYSQL_USER'@'%';
+CREATE DATABASE IF NOT EXISTS `MYSQL_DB` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'MYSQL_USER'@'localhost' IDENTIFIED BY 'MYSQL_PASS';
+CREATE USER IF NOT EXISTS 'MYSQL_USER'@'127.0.0.1' IDENTIFIED BY 'MYSQL_PASS';
+CREATE USER IF NOT EXISTS 'MYSQL_USER'@'%' IDENTIFIED BY 'MYSQL_PASS';
+GRANT ALL PRIVILEGES ON `MYSQL_DB`.* TO 'MYSQL_USER'@'localhost';
+GRANT ALL PRIVILEGES ON `MYSQL_DB`.* TO 'MYSQL_USER'@'127.0.0.1';
+GRANT ALL PRIVILEGES ON `MYSQL_DB`.* TO 'MYSQL_USER'@'%';
 FLUSH PRIVILEGES;
-MYSQL_SCRIPT
-log "  MySQL 用户/数据库创建成功"
+SQLEOF
+
+# 替换占位符
+sed -i "s/MYSQL_ROOT_PASS/$MYSQL_ROOT_PASS/g; s/MYSQL_DB/$MYSQL_DB/g; s/MYSQL_USER/$MYSQL_USER/g; s/MYSQL_PASS/$MYSQL_PASS/g" /tmp/init_mysql.sql
+
+# 逐个尝试不同的 MySQL 连接方式
+if mysql -u root < /tmp/init_mysql.sql 2>/dev/null; then
+    log "  MySQL 配置成功 (root 无密码)"
+elif mysql -u root -p"$MYSQL_ROOT_PASS" < /tmp/init_mysql.sql 2>/dev/null; then
+    log "  MySQL 配置成功 (root 有密码)"
+elif mysql < /tmp/init_mysql.sql 2>/dev/null; then
+    log "  MySQL 配置成功 (sudo)"
+else
+    err "无法连接 MySQL，请手动执行: mysql -u root -p < /tmp/init_mysql.sql"
+fi
+rm -f /tmp/init_mysql.sql
 
 # ========== 4. Redis ==========
 log "[4/7] 安装 Redis..."

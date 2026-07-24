@@ -5,14 +5,20 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * Platform 应用启动类。Spring Boot 3.3 入口。
- * 启用虚拟线程（Virtual Threads）实现协程式高并发。
- * 自动扫描 platform-geo-service, platform-geo-web 等模块的 bean。
+ * Platform 应用启动类（platform-bootstrap）。
+ * <p>Spring Boot 入口，扫描 {@code com.caopan.platform} 下 geo-service / geo-web 等 Bean，
+ * 并 {@code @MapperScan} 注册区划 Mapper。常用 profile：{@code test}（内网可关鉴权）、
+ * {@code online}/{@code prod}（须开内部 Token + 建议限流 fail-closed）。</p>
  */
 @SpringBootApplication(scanBasePackages = "com.caopan.platform")
 @MapperScan("com.caopan.platform.geo.mapper")
 public class PlatformApplication {
 
+    /**
+     * 应用入口。
+     *
+     * @param args 命令行参数（含 {@code --spring.profiles.active=}）
+     */
     public static void main(String[] args) {
         SpringApplication.run(PlatformApplication.class, args);
     }

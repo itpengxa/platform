@@ -14,8 +14,10 @@ import java.util.concurrent.CompletionException;
 import java.util.function.Supplier;
 
 /**
- * 三级缓存：Caffeine (L1) → Redis (L2) → DB (L3)。
- * L3 per-key singleflight 防击穿；null 短 TTL 负缓存防穿透。
+ * 三级缓存实现（GEO-001 / platform-geo-service）。
+ * <p>读路径：Caffeine (L1) → Redis (L2) → DB Loader (L3)。
+ * L3 对同一 key 做 singleflight 防击穿；DB miss 写入短 TTL 负缓存防穿透。
+ * Redis 故障时降级为 L1+DB。由 bootstrap {@code CacheConfig} 装配。</p>
  */
 public class TieredCache {
 
@@ -32,6 +34,15 @@ public class TieredCache {
     private final Duration negativeTtl;
     private final ConcurrentHashMap<String, CompletableFuture<Object>> inflight = new ConcurrentHashMap<>();
 
+    /**
+     * 注入依赖构造。
+     *
+     * @param localCache     L1 Caffeine
+     * @param redisTemplate  L2 Redis，可为 null（关闭 L2）
+     * @param objectMapper   JSON 序列化
+     * @param redisEnabled   是否启用 Redis L2
+     * @param negativeTtl    负缓存 TTL
+     */
     public TieredCache(Cache<String, Object> localCache,
                        StringRedisTemplate redisTemplate,
                        ObjectMapper objectMapper,
@@ -46,6 +57,16 @@ public class TieredCache {
                 : negativeTtl;
     }
 
+    /**
+     * 三级读取：L1 → L2 → L3(dbLoader)；命中后按层回填。
+     *
+     * @param key      缓存键
+     * @param type     反序列化类型
+     * @param l2Ttl    L2 TTL（可带抖动）
+     * @param dbLoader L3 加载器；返回 null 则写负缓存
+     * @param <T>      值类型
+     * @return 缓存值；负缓存命中返回 null
+     */
     @SuppressWarnings("unchecked")
     public <T> T get(String key, TypeReference<T> type, Duration l2Ttl, Supplier<T> dbLoader) {
         Object local = localCache.getIfPresent(key);
@@ -112,6 +133,13 @@ public class TieredCache {
         }
     }
 
+    /**
+     * 主动写入 L1+L2（value 为 null 时改写负缓存）。
+     *
+     * @param key   缓存键
+     * @param value 缓存值
+     * @param l2Ttl L2 TTL
+     */
     public void put(String key, Object value, Duration l2Ttl) {
         if (value == null) {
             putNegative(key);
@@ -121,6 +149,11 @@ public class TieredCache {
         localCache.put(key, value);
     }
 
+    /**
+     * 写入负缓存（L1 哨兵 + L2 {@code __NULL__}）。
+     *
+     * @param key 缓存键
+     */
     public void putNegative(String key) {
         localCache.put(key, NULL_SENTINEL);
         if (!redisEnabled) {
@@ -133,6 +166,11 @@ public class TieredCache {
         }
     }
 
+    /**
+     * 同时失效 L1 与 L2。
+     *
+     * @param key 缓存键
+     */
     public void evict(String key) {
         localCache.invalidate(key);
         if (!redisEnabled) {

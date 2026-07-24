@@ -22,7 +22,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 地理数据缓存门面。封装 TieredCache 的 geo 模块特定调用。
+ * 地理数据缓存门面（GEO-001 / platform-geo-service）。
+ * <p>封装 {@link TieredCache} 的 geo 特定键与加载逻辑：国家列表、子级、祖先链、子树、单节点。
+ * 读路径 L1 Caffeine → L2 Redis → L3 Mapper/DB；负缓存防穿透，L3 singleflight 防击穿。
+ * 供 {@link com.caopan.platform.geo.service.impl.GeoServiceImpl} 调用。</p>
  */
 @Component
 public class GeoDataCache {
@@ -43,6 +46,14 @@ public class GeoDataCache {
     private final TieredCache tieredCache;
     private final GeoCacheProperties cacheProperties;
 
+    /**
+     * 注入依赖构造。
+     *
+     * @param geoCountryMapper 国家 Mapper
+     * @param geoRegionMapper  区划 Mapper
+     * @param tieredCache      三级缓存
+     * @param cacheProperties  缓存 TTL/容量配置
+     */
     public GeoDataCache(GeoCountryMapper geoCountryMapper,
                         GeoRegionMapper geoRegionMapper,
                         TieredCache tieredCache,
@@ -54,7 +65,10 @@ public class GeoDataCache {
     }
 
     /**
-     * 查询启用国家列表。
+     * 查询启用国家列表（走三级缓存；SQL 默认不查 icon_base64）。
+     *
+     * @param keyword 关键词，可空（iso2 精确或名称前缀）
+     * @return 国家实体列表，不会为 null
      */
     public List<GeoCountry> listCountries(String keyword) {
         String key = GeoCacheKeys.countries(keyword);
@@ -68,7 +82,10 @@ public class GeoDataCache {
 
     /**
      * 按父节点查询直属子区划；父不存在抛 {@link ErrorCode#PARENT_NOT_FOUND}。
-     * 加载时回填父节点 region 缓存，避免 Service 层重复打库。
+     * <p>加载时回填父节点 region 缓存，避免 Service 层重复打库。</p>
+     *
+     * @param parentId 父节点 ID
+     * @return 子区划列表
      */
     public List<GeoRegion> listChildren(Long parentId) {
         String key = GeoCacheKeys.children(parentId);
@@ -92,7 +109,10 @@ public class GeoDataCache {
     }
 
     /**
-     * 祖先链实体列表。
+     * 加载祖先链实体列表（按当前节点 path 批量查 ID）。
+     *
+     * @param id 当前区划 ID
+     * @return 祖先链实体（含自身）；不存在抛 {@link ErrorCode#REGION_NOT_FOUND}
      */
     public List<GeoRegion> listPathEntities(Long id) {
         String key = GeoCacheKeys.path(id);
@@ -119,7 +139,12 @@ public class GeoDataCache {
     }
 
     /**
-     * 加载树节点（depth 缺省由调用方归一）。
+     * 加载子树节点（depth 缺省 3；国家级树 depth&gt;3 封顶为 3）。
+     *
+     * @param countryCode 国家 ISO2
+     * @param rootId      根节点，可空（空=国家级）
+     * @param depth       深度 1~5，可空
+     * @return 根节点 + 扁平子树节点
      */
     public TreeLoadResult loadTreeNodes(String countryCode, Long rootId, Integer depth) {
         if (!StringUtils.hasText(countryCode) || countryCode.trim().length() != 2) {
@@ -171,11 +196,26 @@ public class GeoDataCache {
         return result;
     }
 
+    /**
+     * 国家维度前缀搜索（不走三级缓存，结果依赖关键词变化大）。
+     *
+     * @param keyword     关键词前缀
+     * @param countryCode 国家 ISO2
+     * @param level       层级过滤，可空
+     * @param limit       条数上限
+     * @return 命中列表，不会为 null
+     */
     public List<GeoRegion> search(String keyword, String countryCode, Integer level, int limit) {
         List<GeoRegion> hits = geoRegionMapper.search(keyword, countryCode, level, limit);
         return hits == null ? Collections.emptyList() : hits;
     }
 
+    /**
+     * 按 ID 批量查询区划（直查 DB，供路径名组装补祖先）。
+     *
+     * @param ids 区划 ID 列表
+     * @return 实体列表，不会为 null
+     */
     public List<GeoRegion> listByIds(List<Long> ids) {
         if (ids == null || ids.isEmpty()) {
             return Collections.emptyList();
@@ -184,6 +224,12 @@ public class GeoDataCache {
         return list == null ? Collections.emptyList() : list;
     }
 
+    /**
+     * 批量统计各父节点下启用子节点数。
+     *
+     * @param parentIds 父节点 ID 列表
+     * @return parentId → 子节点数
+     */
     public Map<Long, Integer> countChildren(List<Long> parentIds) {
         if (parentIds == null || parentIds.isEmpty()) {
             return Collections.emptyMap();
@@ -204,6 +250,13 @@ public class GeoDataCache {
         return map;
     }
 
+    /**
+     * 优先返回「下一层级」子节点；若无下一层数据则回退全部直属子。
+     *
+     * @param parent 父节点
+     * @param all    直属子列表
+     * @return 过滤后的子列表
+     */
     public List<GeoRegion> preferNextLevel(GeoRegion parent, List<GeoRegion> all) {
         if (parent == null || parent.getLevel() == null || all == null || all.isEmpty()) {
             return all == null ? Collections.emptyList() : all;
@@ -220,6 +273,9 @@ public class GeoDataCache {
 
     /**
      * 按主键查启用区划（走三级缓存）。
+     *
+     * @param id 区划 ID
+     * @return 实体；不存在或非法 ID 返回 null（负缓存命中亦为 null）
      */
     public GeoRegion findEnabledById(Long id) {
         if (id == null || id <= 0) {
@@ -231,6 +287,9 @@ public class GeoDataCache {
         });
     }
 
+    /**
+     * 子树加载结果：根节点 + 扁平节点列表（含根）。
+     */
     public static final class TreeLoadResult implements java.io.Serializable {
         private static final long serialVersionUID = 1L;
         /** 树根节点 */
@@ -238,9 +297,14 @@ public class GeoDataCache {
         /** 子树扁平节点列表（含根） */
         private List<GeoRegion> nodes;
 
+        /** Jackson / 序列化用无参构造 */
         public TreeLoadResult() {
         }
 
+        /**
+         * @param root  树根
+         * @param nodes 扁平节点（含根）
+         */
         public TreeLoadResult(GeoRegion root, List<GeoRegion> nodes) {
             this.root = root;
             this.nodes = nodes;

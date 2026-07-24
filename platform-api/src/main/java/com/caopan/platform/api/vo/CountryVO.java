@@ -3,15 +3,15 @@ package com.caopan.platform.api.vo;
 import java.io.Serializable;
 
 /**
- * 国家视图对象。返回给客户端的国家信息。
- * 列表接口默认不返回 iconBase64（体积大）；字段保留兼容，按需扩展图标接口。
- * displayName 按请求的 lang 参数从 name/nameEn/nameCh 中选取。
+ * 国家视图对象（GEO-001）。
+ * <p>返回给客户端的国家摘要信息。列表接口默认不查/不返回 iconBase64（体积大），
+ * 字段保留以兼容后续图标接口；displayName 按请求 lang 从 name/nameEn/nameCh 选取。</p>
  */
 public class CountryVO implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    /** 主键 ID */
+    /** 主键 ID（L1 号段约 1~250） */
     private Long id;
     /** ISO 3166-1 alpha-2 */
     private String iso2;
@@ -25,11 +25,11 @@ public class CountryVO implements Serializable {
     private String nameCh;
     /** 按 lang 解析后的展示名 */
     private String displayName;
-    /** 国旗图标 Base64（可空） */
+    /** 国旗图标 Base64（列表接口通常为空） */
     private String iconBase64;
     /** 国际电话区号 */
     private String phoneCode;
-    /** 该国数据最大层级 */
+    /** 该国数据最大层级（1~5） */
     private Integer maxLevel;
 
     public Long getId() { return id; }

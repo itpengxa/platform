@@ -19,9 +19,10 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 行政区划 REST 控制器（GEO-001）。
- * <p>暴露国家列表、子级级联、子树、祖先链、关键词搜索等只读查询接口。
- * test 环境默认可不鉴权；online/prod 须开启内部 Token（{@code X-Platform-Token} / Bearer）并配合 IP 限流。</p>
+ * 行政区划 REST 控制器（GEO-001 / platform-geo-web）。
+ * <p>暴露国家列表、子级级联、子树、祖先链、关键词搜索等只读接口，统一包装为 {@link Result}。
+ * 过滤器顺序：IP 限流在鉴权之前；test profile 默认可不鉴权，online/prod 须开启内部 Token
+ *（{@code X-Platform-Token} / Bearer）并配合限流。</p>
  */
 @RestController
 @RequestMapping("/api/geo/v1")
@@ -32,7 +33,7 @@ public class GeoController {
     private final GeoService geoService;
 
     /**
-     * 构造控制器。
+     * 注入依赖构造。
      *
      * @param geoService 行政区划服务
      */
@@ -41,10 +42,10 @@ public class GeoController {
     }
 
     /**
-     * 查询启用国家列表。
+     * 查询启用国家列表（默认不含 icon_base64）。
      *
      * @param lang    语言偏好（local/en/zh，可空）
-     * @param keyword 国家名关键词，可空
+     * @param keyword 关键词，可空（iso2 或名称前缀）
      * @return 统一包装的国家列表
      */
     @GetMapping("/countries")

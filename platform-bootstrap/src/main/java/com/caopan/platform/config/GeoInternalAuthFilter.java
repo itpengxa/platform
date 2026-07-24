@@ -24,10 +24,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 
 /**
- * 可选内部 Token 鉴权（W5）。
- * <p>仅当 {@code platform.geo.auth.enabled=true} 时生效；
- * 校验请求头 {@code X-Platform-Token}（或 {@code Authorization: Bearer ...}）。
- * test 环境默认关闭，online 建议开启。</p>
+ * 内部 Token 鉴权过滤器（GEO-001 / platform-bootstrap，W5）。
+ * <p>Order 低于 IP 限流，保证「限流在鉴权前」。仅当 {@code platform.geo.auth.enabled=true} 时生效；
+ * 校验 {@code X-Platform-Token} 或 {@code Authorization: Bearer ...}。
+ * test 环境默认关闭，online/prod 建议开启并由 {@link GeoAuthStartupGuard} 校验 Token 非空。</p>
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 20)
@@ -42,6 +42,14 @@ public class GeoInternalAuthFilter extends OncePerRequestFilter {
     private final boolean enabled;
     private final String expectedToken;
 
+    /**
+     * 注入依赖构造。
+     *
+     * @param objectMapper  JSON 写出 401 响应
+     * @param messageSource 未授权文案国际化
+     * @param enabled       是否启用鉴权
+     * @param expectedToken 期望 Token（启用时须非空）
+     */
     public GeoInternalAuthFilter(
             ObjectMapper objectMapper,
             MessageSource messageSource,

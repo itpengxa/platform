@@ -3,8 +3,9 @@ package com.caopan.platform.geo.cache;
 import java.time.Duration;
 
 /**
- * 行政区划三级缓存的 Key 拼装与 L2 TTL 常量。
- * <p>Key 不含 lang，保证同一原始数据多语言共享缓存。</p>
+ * 行政区划三级缓存的 Key 拼装与 L2 TTL 文档常量（GEO-001）。
+ * <p>Key 不含 lang，保证同一原始数据多语言共享缓存。
+ * 实际 TTL 以 {@link GeoCacheProperties} 为准（可叠加抖动）。</p>
  */
 public final class GeoCacheKeys {
 
@@ -22,6 +23,7 @@ public final class GeoCacheKeys {
     /** 子树 L2 TTL（相对更短，防大对象脏读） */
     public static final Duration L2_TREE_TTL = Duration.ofHours(12);
 
+    /** 工具类，禁止实例化 */
     private GeoCacheKeys() {
     }
 

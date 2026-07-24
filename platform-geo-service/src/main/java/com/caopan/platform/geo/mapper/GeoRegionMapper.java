@@ -9,8 +9,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 行政区划树 Mapper。MyBatis-Plus 基础 CRUD + 树形查询。
- * 以 parent_id + path 索引实现高效树查询，无需递归 SQL。
+ * 行政区划树 Mapper（GEO-001 / platform-geo-service）。
+ * <p>MyBatis-Plus 基础 CRUD + 树形查询。依赖 parent_id + path 索引做高效子级/子树查询，
+ * 无需递归 SQL。search 为国家维度下的名称前缀匹配（非模糊）。</p>
  */
 @Mapper
 public interface GeoRegionMapper extends BaseMapper<GeoRegion> {
@@ -42,9 +43,9 @@ public interface GeoRegionMapper extends BaseMapper<GeoRegion> {
     /**
      * 按物化路径前缀查询子树节点。
      *
-     * @param pathPrefix 路径前缀，如 /1/200000001/
+     * @param pathPrefix 路径前缀，如 {@code /1/200000001/}
      * @param maxLevel   最大层级，可空
-     * @param maxRows    最大行数（硬限制）
+     * @param maxRows    最大行数（硬限制，防大包）
      * @return 子树节点列表
      */
     List<GeoRegion> listSubtree(@Param("pathPrefix") String pathPrefix,
@@ -60,10 +61,10 @@ public interface GeoRegionMapper extends BaseMapper<GeoRegion> {
     List<GeoRegion> listByIds(@Param("ids") List<Long> ids);
 
     /**
-     * 关键词搜索区划（本地名/英文/中文模糊匹配）。
+     * 关键词搜索区划（name/nameEn/nameCh 前缀匹配，须带国家维度）。
      *
-     * @param keyword     关键词
-     * @param countryCode 国家过滤，可空
+     * @param keyword     关键词前缀
+     * @param countryCode 国家 ISO2（必填语义由上层保证）
      * @param level       层级过滤，可空
      * @param limit       返回条数上限
      * @return 命中列表

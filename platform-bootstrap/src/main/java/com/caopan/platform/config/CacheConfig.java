@@ -15,7 +15,9 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Caffeine (L1) + Redis (L2) 装配；TTL/容量来自 {@link GeoCacheProperties}。
+ * 三级缓存装配（GEO-001 / platform-bootstrap）。
+ * <p>创建 L1 Caffeine 与 {@link TieredCache}（L1→L2 Redis→L3 DB）；
+ * TTL/容量来自 {@link GeoCacheProperties}。Redis 不可用或关闭时降级 L1+DB。</p>
  */
 @Configuration
 @EnableConfigurationProperties(GeoCacheProperties.class)
@@ -23,6 +25,12 @@ public class CacheConfig {
 
     private static final Logger log = LoggerFactory.getLogger(CacheConfig.class);
 
+    /**
+     * L1 本地缓存 Bean。
+     *
+     * @param props 缓存配置
+     * @return Caffeine Cache
+     */
     @Bean
     public Cache<String, Object> geoLocalCache(GeoCacheProperties props) {
         return Caffeine.newBuilder()
@@ -32,6 +40,15 @@ public class CacheConfig {
                 .build();
     }
 
+    /**
+     * 三级缓存门面 Bean。
+     *
+     * @param geoLocalCache  L1
+     * @param objectMapper   JSON
+     * @param props          TTL/开关
+     * @param redisProvider  可选 Redis
+     * @return TieredCache
+     */
     @Bean
     public TieredCache tieredCache(
             Cache<String, Object> geoLocalCache,

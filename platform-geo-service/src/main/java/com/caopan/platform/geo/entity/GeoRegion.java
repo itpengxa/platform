@@ -7,9 +7,10 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * 行政区划树实体。与 geo_region 表对应。
- * 统一树模型：国家也是树节点（level=1），各国深度不一致由数据本身表达。
- * path 为物化路径（如 /240/3794/1570584/），一次查询取整条祖先链。
+ * 行政区划树实体（GEO-001）。与 geo_region 表对应。
+ * <p>统一树模型：国家也是树节点（level=1），各国深度由数据表达。
+ * path 为物化路径（如 {@code /1/200000001/300000010/}），一次查询可取整条祖先链。
+ * ID 号段：L1 约 1~250，L2 2 亿+，L3 3 亿+，L4 4 亿+，L5 5 亿+。</p>
  */
 @TableName("geo_region")
 public class GeoRegion {

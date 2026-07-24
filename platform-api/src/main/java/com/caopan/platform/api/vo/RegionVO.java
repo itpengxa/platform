@@ -3,8 +3,9 @@ package com.caopan.platform.api.vo;
 import java.io.Serializable;
 
 /**
- * 区划视图对象（平级）。用于子级列表查询和祖先链回显。
- * isLeaf 标识是否末级节点，前端据此判断是否继续级联下钻。
+ * 区划平级视图对象（GEO-001）。
+ * <p>用于子级列表与祖先链回显。isLeaf 标识是否末级，前端据此决定是否继续级联下钻。
+ * ID 号段约定：L1 国家约 1~250，L2 省州 2 亿+，L3 城市 3 亿+，L4 区县 4 亿+，L5 街镇 5 亿+。</p>
  */
 public class RegionVO implements Serializable {
 
@@ -28,7 +29,7 @@ public class RegionVO implements Serializable {
     private String displayName;
     /** 层级：1国家 2省州 3城市 4区县 5街镇 */
     private Integer level;
-    /** 区划类型枚举字符串 */
+    /** 区划类型枚举字符串，对应 {@link com.caopan.platform.api.enums.RegionType} */
     private String regionType;
     /** 物化路径，如 /1/200000001/300000010/ */
     private String path;

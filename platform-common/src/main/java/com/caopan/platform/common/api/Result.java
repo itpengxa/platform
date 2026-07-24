@@ -4,9 +4,9 @@ import java.io.Serial;
 import java.io.Serializable;
 
 /**
- * 统一 API 响应体。所有接口返回此结构。
- * code=0 表示成功，非 0 表示业务异常。
- * 泛型 data 承载具体业务数据。
+ * 统一 API 响应体（platform-common）。
+ * <p>所有对外 HTTP 接口返回此结构：code=0 表示成功，非 0 为业务/系统错误码
+ * （与 {@link com.caopan.platform.common.exception.ErrorCode} 对齐）；泛型 data 承载业务数据。</p>
  */
 public class Result<T> implements Serializable {
 
@@ -15,15 +15,16 @@ public class Result<T> implements Serializable {
 
     /** 业务码，0=成功 */
     private int code;
-    /** 提示信息 */
+    /** 提示信息（可按 Locale 国际化） */
     private String message;
     /** 业务数据 */
     private T data;
 
     /**
-     * 成功响应。
-     * @param data data
-     * @return 查询结果
+     * 构造成功响应。
+     *
+     * @param data 业务数据，可为 null
+     * @return code=0、message=success 的结果
      */
     public static <T> Result<T> ok(T data) {
         Result<T> r = new Result<>();
@@ -34,10 +35,11 @@ public class Result<T> implements Serializable {
     }
 
     /**
-     * 失败响应。
-     * @param code code
-     * @param message message
-     * @return 查询结果
+     * 构造失败响应。
+     *
+     * @param code    业务错误码
+     * @param message 错误提示文案
+     * @return data 为 null 的失败结果
      */
     public static <T> Result<T> fail(int code, String message) {
         Result<T> r = new Result<>();

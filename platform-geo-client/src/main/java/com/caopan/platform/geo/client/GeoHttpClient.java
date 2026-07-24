@@ -20,9 +20,9 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * GEO HTTP 客户端。封装对 geo 服务 REST API 的 HTTP 调用。
- * 使用 HttpURLConnection 零依赖，JDK 8 兼容。
- * 提供类型安全的 Java 方法，隐藏 HTTP 序列化/反序列化细节。
+ * GEO HTTP 客户端（GEO-001 / platform-geo-client）。
+ * <p>实现 {@link GeoService}，用 HttpURLConnection 调用 {@code /api/geo/v1/**}，
+ * 零额外 HTTP 依赖；解析统一 {@code Result} 包装。网络/业务失败抛 {@link GeoClientException}。</p>
  */
 public class GeoHttpClient implements GeoService {
 
@@ -30,17 +30,19 @@ public class GeoHttpClient implements GeoService {
     private final ObjectMapper objectMapper;
 
     /**
-     * 构造 GeoHttpClient。
-     * @param baseUrl baseUrl
+     * 使用默认 ObjectMapper 构造。
+     *
+     * @param baseUrl 服务根地址，如 {@code http://localhost:8080}（勿带尾斜杠亦可）
      */
     public GeoHttpClient(String baseUrl) {
         this(baseUrl, new ObjectMapper());
     }
 
     /**
-     * 构造 GeoHttpClient。
-     * @param baseUrl baseUrl
-     * @param objectMapper objectMapper
+     * 注入依赖构造。
+     *
+     * @param baseUrl      服务根地址
+     * @param objectMapper JSON 解析器
      */
     public GeoHttpClient(String baseUrl, ObjectMapper objectMapper) {
         if (baseUrl == null || baseUrl.trim().isEmpty()) {
@@ -56,9 +58,10 @@ public class GeoHttpClient implements GeoService {
 
     /**
      * 查询启用国家列表，支持语言与关键词过滤。
-     * @param lang 语言偏好（local/en/zh，可空）
+     *
+     * @param lang    语言偏好（local/en/zh，可空）
      * @param keyword 关键词，可空
-     * @return 查询结果
+     * @return 国家列表
      */
     @Override
     public List<CountryVO> listCountries(String lang, String keyword) {
@@ -70,9 +73,10 @@ public class GeoHttpClient implements GeoService {
 
     /**
      * 按父节点 ID 查询直属子行政区划列表。
+     *
      * @param parentId 父节点 ID
-     * @param lang 语言偏好（local/en/zh，可空）
-     * @return 查询结果
+     * @param lang     语言偏好（local/en/zh，可空）
+     * @return 子级区划列表
      */
     @Override
     public List<RegionVO> listChildren(Long parentId, String lang) {
@@ -82,6 +86,15 @@ public class GeoHttpClient implements GeoService {
         return getList(path.toString(), new TypeReference<List<RegionVO>>() {});
     }
 
+    /**
+     * 按国家编码组装行政区划树。
+     *
+     * @param countryCode 国家 ISO2
+     * @param rootId      根节点，可空
+     * @param depth       深度，可空
+     * @param lang        语言偏好，可空
+     * @return 树根节点
+     */
     @Override
     public RegionTreeVO getTree(String countryCode, Long rootId, Integer depth, String lang) {
         StringBuilder path = new StringBuilder("/api/geo/v1/regions/tree?");
@@ -92,6 +105,13 @@ public class GeoHttpClient implements GeoService {
         return getData(path.toString(), new TypeReference<RegionTreeVO>() {});
     }
 
+    /**
+     * 按区划 ID 回显祖先链。
+     *
+     * @param id   区划 ID（必填，&gt;0）
+     * @param lang 语言偏好，可空
+     * @return 祖先链
+     */
     @Override
     public List<RegionVO> getPath(Long id, String lang) {
         if (id == null || id <= 0) {
@@ -104,13 +124,14 @@ public class GeoHttpClient implements GeoService {
     }
 
     /**
-     * 按关键词搜索行政区划，返回命中节点及全路径名称。
-     * @param keyword 关键词，可空
-     * @param countryCode 国家 ISO2 编码
-     * @param level 层级过滤，可空
-     * @param limit 返回条数上限
-     * @param lang 语言偏好（local/en/zh，可空）
-     * @return 查询结果
+     * 按关键词搜索行政区划（须带 countryCode；服务端前缀匹配）。
+     *
+     * @param keyword     关键词
+     * @param countryCode 国家 ISO2
+     * @param level       层级过滤，可空
+     * @param limit       条数上限，可空
+     * @param lang        语言偏好，可空
+     * @return 搜索结果列表
      */
     @Override
     public List<RegionSearchVO> search(String keyword, String countryCode, Integer level, Integer limit, String lang) {
@@ -123,11 +144,17 @@ public class GeoHttpClient implements GeoService {
         return getList(path.toString(), new TypeReference<List<RegionSearchVO>>() {});
     }
 
+    /**
+     * GET 列表型 data，null 时返回空列表。
+     */
     private <T> List<T> getList(String pathAndQuery, TypeReference<List<T>> type) {
         List<T> data = getData(pathAndQuery, type);
         return data == null ? Collections.<T>emptyList() : data;
     }
 
+    /**
+     * 发起 GET，解析 {@code Result}：code≠0 或 IO 失败抛 {@link GeoClientException}。
+     */
     private <T> T getData(String pathAndQuery, TypeReference<T> type) {
         HttpURLConnection conn = null;
         try {
@@ -165,10 +192,11 @@ public class GeoHttpClient implements GeoService {
     }
 
     /**
-     * 追加param。
-     * @param sb sb
-     * @param name name
-     * @param value value
+     * 向查询串追加非空参数（URL 编码）。
+     *
+     * @param sb    已含 {@code ?} 的 path 缓冲
+     * @param name  参数名
+     * @param value 参数值，空则跳过
      */
     private static void appendParam(StringBuilder sb, String name, String value) {
         if (value == null || value.isEmpty()) {

@@ -26,9 +26,10 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 行政区划服务实现。实现 GeoService 接口的所有查询方法。
- * 关键能力：多语言 displayName 选取、树组装、祖先链解析、关键词搜索。
- * 所有查询走三级缓存（TieredCache），只读操作无事务开销。
+ * 行政区划服务实现（GEO-001 / platform-geo-service）。
+ * <p>实现 {@link GeoService}：多语言 displayName、树组装、祖先链、国家维度前缀搜索。
+ * 数据访问经 {@link GeoDataCache} 走三级缓存（L1 Caffeine → L2 Redis → L3 DB），只读无事务。
+ * countries 列表默认不含 icon_base64；search 强制国家 + 前缀匹配。</p>
  */
 @Service
 public class GeoServiceImpl implements GeoService {
@@ -38,8 +39,9 @@ public class GeoServiceImpl implements GeoService {
     private final GeoDataCache geoDataCache;
 
     /**
-     * 构造 GeoServiceImpl。
-     * @param geoDataCache geoDataCache
+     * 注入依赖构造。
+     *
+     * @param geoDataCache 地理数据缓存门面
      */
     public GeoServiceImpl(GeoDataCache geoDataCache) {
         this.geoDataCache = geoDataCache;
@@ -47,9 +49,10 @@ public class GeoServiceImpl implements GeoService {
 
     /**
      * 查询启用国家列表，支持语言与关键词过滤。
-     * @param lang 语言偏好（local/en/zh，可空）
-     * @param keyword 关键词，可空
-     * @return 查询结果
+     *
+     * @param lang    语言偏好（local/en/zh，可空）
+     * @param keyword 关键词，可空（iso2 或名称前缀）
+     * @return 国家 VO 列表（不含大体积 iconBase64）
      */
     @Override
     public List<CountryVO> listCountries(String lang, String keyword) {
@@ -75,9 +78,10 @@ public class GeoServiceImpl implements GeoService {
 
     /**
      * 按父节点 ID 查询直属子行政区划列表。
-     * @param parentId 父节点 ID
-     * @param lang 语言偏好（local/en/zh，可空）
-     * @return 查询结果
+     *
+     * @param parentId 父节点 ID（必填，&gt;0）
+     * @param lang     语言偏好（local/en/zh，可空）
+     * @return 子级区划 VO 列表（含 isLeaf）
      */
     @Override
     public List<RegionVO> listChildren(Long parentId, String lang) {
@@ -102,9 +106,10 @@ public class GeoServiceImpl implements GeoService {
     }
 
     /**
-     * 统计childmap。
-     * @param regions regions
-     * @return 查询结果
+     * 批量统计各区划节点的启用子节点数量，用于判定 isLeaf。
+     *
+     * @param regions 待统计的区划列表
+     * @return parentId → 子节点数；空入参返回空 Map
      */
     private Map<Long, Integer> countChildMap(List<GeoRegion> regions) {
         if (regions == null || regions.isEmpty()) {
@@ -124,7 +129,7 @@ public class GeoServiceImpl implements GeoService {
      * @param rootId      根节点 ID，可空
      * @param depth       深度限制 1~5，可空
      * @param lang        语言偏好（local/en/zh，可空）
-     * @return 树根节点
+     * @return 树根节点（含嵌套 children）
      */
     @Override
     public RegionTreeVO getTree(String countryCode, Long rootId, Integer depth, String lang) {
@@ -180,12 +185,14 @@ public class GeoServiceImpl implements GeoService {
 
     /**
      * 按关键词搜索行政区划，返回命中节点及全路径名称。
-     * @param keyword 关键词，可空
-     * @param countryCode 国家 ISO2 编码
-     * @param level 层级过滤，可空
-     * @param limit 返回条数上限
-     * @param lang 语言偏好（local/en/zh，可空）
-     * @return 查询结果
+     * <p>强制 countryCode（ISO2）+ 名称前缀匹配，禁止 %/_ 通配符，避免全表扫。</p>
+     *
+     * @param keyword     关键词（必填，长度 2~64）
+     * @param countryCode 国家 ISO2 编码（必填）
+     * @param level       层级过滤，可空
+     * @param limit       返回条数上限（缺省 20，范围 1~100）
+     * @param lang        语言偏好（local/en/zh，可空）
+     * @return 搜索结果（含 fullPathName）
      */
     @Override
     public List<RegionSearchVO> search(String keyword, String countryCode, Integer level, Integer limit, String lang) {
@@ -224,11 +231,12 @@ public class GeoServiceImpl implements GeoService {
     }
 
     /**
-     * 构建full路径name。
-     * @param hit hit
-     * @param lang 语言偏好（local/en/zh，可空）
-     * @param ancestorCache ancestorCache
-     * @return 查询结果
+     * 按物化 path 组装命中节点的全路径展示名（lang 选取各层名称）。
+     *
+     * @param hit           命中区划
+     * @param lang          语言偏好
+     * @param ancestorCache 祖先实体缓存，跨多次命中复用，减少批量查库
+     * @return 以 / 连接的全路径名称
      */
     private String buildFullPathName(GeoRegion hit, String lang, Map<Long, GeoRegion> ancestorCache) {
         List<Long> ids = PathUtil.parsePathIds(hit.getPath());
@@ -254,11 +262,12 @@ public class GeoServiceImpl implements GeoService {
     }
 
     /**
-     * 构建树。
-     * @param nodes nodes
-     * @param rootId 区划 ID
-     * @param lang 语言偏好（local/en/zh，可空）
-     * @return 查询结果
+     * 将扁平节点列表组装为以 rootId 为根的树。
+     *
+     * @param nodes  扁平节点（含根）
+     * @param rootId 树根 ID
+     * @param lang   语言偏好
+     * @return 树根 VO；若根不在列表中则返回 null
      */
     private RegionTreeVO buildTree(List<GeoRegion> nodes, Long rootId, String lang) {
         Map<Long, RegionTreeVO> map = new LinkedHashMap<>();
@@ -281,10 +290,11 @@ public class GeoServiceImpl implements GeoService {
     }
 
     /**
-     * 转换为countryvo。
-     * @param c c
-     * @param lang 语言偏好（local/en/zh，可空）
-     * @return 查询结果
+     * 国家实体转 CountryVO，并按 lang 填充 displayName。
+     *
+     * @param c    国家实体
+     * @param lang 语言偏好
+     * @return 国家视图对象
      */
     private CountryVO toCountryVO(GeoCountry c, String lang) {
         CountryVO vo = new CountryVO();
@@ -302,10 +312,11 @@ public class GeoServiceImpl implements GeoService {
     }
 
     /**
-     * 转换为regionvo。
-     * @param r r
-     * @param lang 语言偏好（local/en/zh，可空）
-     * @return 查询结果
+     * 区划实体转平级 RegionVO。
+     *
+     * @param r    区划实体
+     * @param lang 语言偏好
+     * @return 区划视图对象
      */
     private RegionVO toRegionVO(GeoRegion r, String lang) {
         RegionVO vo = new RegionVO();
@@ -314,10 +325,11 @@ public class GeoServiceImpl implements GeoService {
     }
 
     /**
-     * 转换为region树vo。
-     * @param r r
-     * @param lang 语言偏好（local/en/zh，可空）
-     * @return 查询结果
+     * 区划实体转树节点 RegionTreeVO。
+     *
+     * @param r    区划实体
+     * @param lang 语言偏好
+     * @return 树节点视图对象
      */
     private RegionTreeVO toRegionTreeVO(GeoRegion r, String lang) {
         RegionTreeVO vo = new RegionTreeVO();
@@ -326,10 +338,11 @@ public class GeoServiceImpl implements GeoService {
     }
 
     /**
-     * 转换为region搜索vo。
-     * @param r r
-     * @param lang 语言偏好（local/en/zh，可空）
-     * @return 查询结果
+     * 区划实体转搜索结果 RegionSearchVO（fullPathName 由调用方另填）。
+     *
+     * @param r    区划实体
+     * @param lang 语言偏好
+     * @return 搜索结果视图对象
      */
     private RegionSearchVO toRegionSearchVO(GeoRegion r, String lang) {
         RegionSearchVO vo = new RegionSearchVO();
@@ -338,10 +351,11 @@ public class GeoServiceImpl implements GeoService {
     }
 
     /**
-     * 填充region。
-     * @param vo vo
-     * @param r r
-     * @param lang 语言偏好（local/en/zh，可空）
+     * 将区划实体公共字段填入 VO（含 displayName / isLeaf）。
+     *
+     * @param vo   目标 VO
+     * @param r    源实体
+     * @param lang 语言偏好
      */
     private void fillRegion(RegionVO vo, GeoRegion r, String lang) {
         vo.setId(r.getId());
@@ -359,9 +373,10 @@ public class GeoServiceImpl implements GeoService {
     }
 
     /**
-     * 裁剪转换为null。
-     * @param value value
-     * @return 查询结果
+     * 去掉首尾空白；空白串视为 null。
+     *
+     * @param value 原始字符串
+     * @return trim 后非空串，或 null
      */
     private String trimToNull(String value) {
         if (!StringUtils.hasText(value)) {

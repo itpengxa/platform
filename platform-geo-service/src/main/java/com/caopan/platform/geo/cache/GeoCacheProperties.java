@@ -6,7 +6,9 @@ import java.time.Duration;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * geo 缓存可配置项（TTL / 容量 / 雪崩抖动）。
+ * geo 缓存可配置项（GEO-001 / platform-geo-service）。
+ * <p>绑定前缀 {@code platform.geo.cache}：L1 容量/TTL、各业务 L2 TTL、
+ * 雪崩抖动、负缓存 TTL、树查询 maxRows。由 bootstrap {@code CacheConfig} 启用。</p>
  */
 @ConfigurationProperties(prefix = "platform.geo.cache")
 public class GeoCacheProperties {
@@ -37,32 +39,53 @@ public class GeoCacheProperties {
     /** 树查询最大行数，超出直接拒绝，防大包 OOM */
     private int treeMaxRows = 3000;
 
+    /**
+     * @return L1 过期时间
+     */
     public Duration l1Ttl() {
         return Duration.ofMinutes(Math.max(l1TtlMinutes, 1L));
     }
 
+    /**
+     * @return 国家列表 L2 TTL（含抖动）
+     */
     public Duration countriesTtl() {
         return withJitter(Duration.ofHours(Math.max(countriesTtlHours, 1L)));
     }
 
+    /**
+     * @return 子级列表 L2 TTL（含抖动）
+     */
     public Duration childrenTtl() {
         return withJitter(Duration.ofHours(Math.max(childrenTtlHours, 1L)));
     }
 
+    /**
+     * @return 祖先链 L2 TTL（含抖动）
+     */
     public Duration pathTtl() {
         return withJitter(Duration.ofHours(Math.max(pathTtlHours, 1L)));
     }
 
+    /**
+     * @return 单节点 L2 TTL（含抖动）
+     */
     public Duration regionTtl() {
         return withJitter(Duration.ofHours(Math.max(regionTtlHours, 1L)));
     }
 
+    /**
+     * @return 子树 L2 TTL（含抖动）
+     */
     public Duration treeTtl() {
         return withJitter(Duration.ofHours(Math.max(treeTtlHours, 1L)));
     }
 
     /**
-     * 基础 TTL 上叠加随机秒数，打散过期时间。
+     * 基础 TTL 上叠加随机秒数，打散过期时间，缓解缓存雪崩。
+     *
+     * @param base 基础 TTL
+     * @return 叠加抖动后的 TTL
      */
     public Duration withJitter(Duration base) {
         long jitter = Math.max(jitterSeconds, 0L);
@@ -137,6 +160,9 @@ public class GeoCacheProperties {
         this.treeTtlHours = treeTtlHours;
     }
 
+    /**
+     * @return 负缓存 TTL
+     */
     public Duration negativeTtl() {
         return Duration.ofSeconds(Math.max(negativeTtlSeconds, 1L));
     }
@@ -157,6 +183,9 @@ public class GeoCacheProperties {
         this.negativeTtlSeconds = negativeTtlSeconds;
     }
 
+    /**
+     * @return 树查询最大行数（非法配置时回退 3000）
+     */
     public int getTreeMaxRows() {
         return treeMaxRows <= 0 ? 3000 : treeMaxRows;
     }
