@@ -4,7 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 2026-07-24 GEO-001 区划树 VO
+ * 区划视图对象（树形）。用于子树查询，包含嵌套的 children 子节点。
+ * 递归结构，前端可直接渲染为可展开的树形组件。
  */
 public class RegionTreeVO extends RegionVO {
 

@@ -8,7 +8,8 @@ import com.caopan.platform.api.vo.RegionVO;
 import java.util.List;
 
 /**
- * 2026-07-24 GEO-001 行政区划查询契约（JDK 8 可引用）
+ * 行政区划服务接口。定义 geo 模块对外提供的所有查询能力。
+ * 由 platform-geo-service 模块的 GeoServiceImpl 实现。
  */
 public interface GeoService {
 

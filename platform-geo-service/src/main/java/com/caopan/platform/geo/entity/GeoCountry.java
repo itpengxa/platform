@@ -9,6 +9,11 @@ import java.time.LocalDateTime;
  * 2026-07-23 GEO-001 国家扩展信息
  */
 @TableName("geo_country")
+/**
+ * 国家扩展信息实体。与 geo_country 表对应。
+ * 存储国家的 ISO 编码、多语言名称、图标、区号等信息。
+ * max_level 标识该国数据的最深层级，告知调用方该国支持几级下钻。
+ */
 public class GeoCountry {
 
     @TableId

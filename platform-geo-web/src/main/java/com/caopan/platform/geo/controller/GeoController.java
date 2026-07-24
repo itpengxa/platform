@@ -24,6 +24,10 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/geo/v1")
+/**
+ * 行政区划 REST 控制器。暴露 5 个查询接口 + 1 个国旗资源接口。
+ * 所有接口均为只读（GET），无需鉴权（内网开放）。
+ */
 public class GeoController {
 
     private static final Logger log = LoggerFactory.getLogger(GeoController.class);

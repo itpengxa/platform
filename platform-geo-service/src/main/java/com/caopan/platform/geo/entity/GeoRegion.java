@@ -10,6 +10,11 @@ import java.time.LocalDateTime;
  * 2026-07-23 GEO-001 行政区划树节点
  */
 @TableName("geo_region")
+/**
+ * 行政区划树实体。与 geo_region 表对应。
+ * 统一树模型：国家也是树节点（level=1），各国深度不一致由数据本身表达。
+ * path 为物化路径（如 /240/3794/1570584/），一次查询取整条祖先链。
+ */
 public class GeoRegion {
 
     @TableId

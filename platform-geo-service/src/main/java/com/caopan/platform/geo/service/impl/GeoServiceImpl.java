@@ -29,6 +29,11 @@ import java.util.Objects;
  * 2026-07-24 GEO-001 行政区划查询实现（缓存原始数据，按 lang 组装 displayName）
  */
 @Service
+/**
+ * 行政区划服务实现。实现 GeoService 接口的所有查询方法。
+ * 关键能力：多语言 displayName 选取、树组装、祖先链解析、关键词搜索。
+ * 所有查询走三级缓存（TieredCache），只读操作无事务开销。
+ */
 public class GeoServiceImpl implements GeoService {
 
     private static final Logger log = LoggerFactory.getLogger(GeoServiceImpl.class);

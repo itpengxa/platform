@@ -1,7 +1,8 @@
 package com.caopan.platform.common.exception;
 
 /**
- * 2026-07-23 GEO-001 业务异常
+ * 业务异常。当业务校验不通过时抛出，由 GlobalExceptionHandler 统一捕获并
+ * 转换为标准 Result 响应返回给客户端。
  */
 public class BizException extends RuntimeException {
 

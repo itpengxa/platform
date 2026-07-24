@@ -24,6 +24,10 @@ import java.util.Map;
  * 2026-07-24 GEO-001 原始数据三级缓存接入（Key 不含 lang）
  */
 @Component
+/**
+ * 地理数据缓存门面。封装 TieredCache 的 geo 模块特定调用。
+ * 处理缓存 miss 时的 DB 回查、序列化/反序列化、空值保护等。
+ */
 public class GeoDataCache {
 
     private static final Logger log = LoggerFactory.getLogger(GeoDataCache.class);

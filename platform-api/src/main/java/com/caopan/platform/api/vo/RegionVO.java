@@ -3,7 +3,8 @@ package com.caopan.platform.api.vo;
 import java.io.Serializable;
 
 /**
- * 2026-07-24 GEO-001 区划 VO
+ * 区划视图对象（平级）。用于子级列表查询和祖先链回显。
+ * isLeaf 标识是否末级节点，前端据此判断是否继续级联下钻。
  */
 public class RegionVO implements Serializable {
 

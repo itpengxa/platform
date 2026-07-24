@@ -1,7 +1,9 @@
 package com.caopan.platform.common.exception;
 
 /**
- * 2026-07-23 GEO-001 业务错误码
+ * 错误码枚举。统一管理所有业务异常码。
+ * 40001~40099 为 geo 模块错误码。
+ * 配置在 application.yml / apollo 中，支持动态调整。
  */
 public enum ErrorCode {
 
