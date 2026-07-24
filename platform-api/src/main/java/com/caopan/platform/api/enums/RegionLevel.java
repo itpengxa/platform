@@ -12,6 +12,7 @@ public enum RegionLevel {
     DISTRICT(4),
     STREET(5);
 
+    /** 层级数值：1~5 */
     private final int value;
 
     RegionLevel(int value) {

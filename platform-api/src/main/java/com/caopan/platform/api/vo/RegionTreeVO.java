@@ -11,6 +11,7 @@ public class RegionTreeVO extends RegionVO {
 
     private static final long serialVersionUID = 1L;
 
+    /** 子节点列表 */
     private List<RegionTreeVO> children = new ArrayList<RegionTreeVO>();
 
     public List<RegionTreeVO> getChildren() {

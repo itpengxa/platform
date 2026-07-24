@@ -13,10 +13,18 @@ public class Result<T> implements Serializable {
     @Serial
     private static final long serialVersionUID = 1L;
 
+    /** 业务码，0=成功 */
     private int code;
+    /** 提示信息 */
     private String message;
+    /** 业务数据 */
     private T data;
 
+    /**
+     * 成功响应。
+     * @param data data
+     * @return 查询结果
+     */
     public static <T> Result<T> ok(T data) {
         Result<T> r = new Result<>();
         r.setCode(0);
@@ -25,6 +33,12 @@ public class Result<T> implements Serializable {
         return r;
     }
 
+    /**
+     * 失败响应。
+     * @param code code
+     * @param message message
+     * @return 查询结果
+     */
     public static <T> Result<T> fail(int code, String message) {
         Result<T> r = new Result<>();
         r.setCode(code);

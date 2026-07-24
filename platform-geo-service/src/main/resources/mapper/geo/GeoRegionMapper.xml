@@ -41,6 +41,7 @@
             AND level &lt;= #{maxLevel}
         </if>
         ORDER BY level ASC, sort ASC, id ASC
+        LIMIT #{maxRows}
     </select>
 
     <select id="listByIds" resultType="com.caopan.platform.geo.entity.GeoRegion">
@@ -57,12 +58,10 @@
         SELECT <include refid="RegionColumns"/>
         FROM geo_region
         WHERE status = 1
-          AND (name LIKE CONCAT('%', #{keyword}, '%')
-            OR name_en LIKE CONCAT('%', #{keyword}, '%')
-            OR name_ch LIKE CONCAT('%', #{keyword}, '%'))
-        <if test="countryCode != null and countryCode != ''">
-            AND country_code = #{countryCode}
-        </if>
+          AND country_code = #{countryCode}
+          AND (name LIKE CONCAT(#{keyword}, '%')
+            OR name_en LIKE CONCAT(#{keyword}, '%')
+            OR name_ch LIKE CONCAT(#{keyword}, '%'))
         <if test="level != null">
             AND level = #{level}
         </if>

@@ -8,10 +8,19 @@ public class GeoClientException extends RuntimeException {
 
     private static final long serialVersionUID = 1L;
 
+    /**
+     * 构造 GeoClientException。
+     * @param message message
+     */
     public GeoClientException(String message) {
         super(message);
     }
 
+    /**
+     * 构造 GeoClientException。
+     * @param message message
+     * @param cause cause
+     */
     public GeoClientException(String message, Throwable cause) {
         super(message, cause);
     }

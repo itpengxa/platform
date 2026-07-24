@@ -1,3 +1,4 @@
+# 兼容旧名：等同 test
 spring:
   config:
     activate:
@@ -10,3 +11,12 @@ spring:
     redis:
       host: 127.0.0.1
       port: 6379
+
+platform:
+  geo:
+    auth:
+      enabled: false
+
+logging:
+  level:
+    com.caopan.platform.geo.mapper: DEBUG

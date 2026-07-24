@@ -1,5 +1,7 @@
 package com.caopan.platform.geo.service.support;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
@@ -11,9 +13,20 @@ import java.util.List;
  */
 public final class PathUtil {
 
+    private static final Logger log = LoggerFactory.getLogger(PathUtil.class);
+
+    /**
+     * 构造 PathUtil。
+     */
     private PathUtil() {
     }
 
+    /**
+     * 按物化路径字符串解析祖先 ID 列表（如 {@code /1/200000001/300000010/}）。
+     *
+     * @param path 物化路径
+     * @return 自根到叶的 ID 列表；非法片段会被跳过并记警告日志
+     */
     public static List<Long> parsePathIds(String path) {
         if (!StringUtils.hasText(path)) {
             return Collections.emptyList();
@@ -26,8 +39,8 @@ public final class PathUtil {
             }
             try {
                 ids.add(Long.parseLong(part.trim()));
-            } catch (NumberFormatException ignored) {
-                // skip
+            } catch (NumberFormatException e) {
+                log.warn("skip invalid path segment, path={}, part={}", path, part);
             }
         }
         return ids;

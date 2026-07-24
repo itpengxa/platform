@@ -10,17 +10,29 @@ public class RegionVO implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
+    /** 主键 ID */
     private Long id;
+    /** 父节点 ID，国家为 0 */
     private Long parentId;
+    /** 所属国家 ISO2 编码 */
     private String countryCode;
+    /** 行政编码 */
     private String code;
+    /** 本地/缺省名称 */
     private String name;
+    /** 英文名称 */
     private String nameEn;
+    /** 中文名称 */
     private String nameCh;
+    /** 按 lang 解析后的展示名 */
     private String displayName;
+    /** 层级：1国家 2省州 3城市 4区县 5街镇 */
     private Integer level;
+    /** 区划类型枚举字符串 */
     private String regionType;
+    /** 物化路径，如 /1/200000001/300000010/ */
     private String path;
+    /** 是否末级（无子节点） */
     private Boolean isLeaf;
 
     public Long getId() { return id; }

@@ -5,6 +5,9 @@ package com.caopan.platform.common.util;
  */
 public final class LangUtil {
 
+    /**
+     * 构造 LangUtil。
+     */
     private LangUtil() {
     }
 
@@ -23,6 +26,12 @@ public final class LangUtil {
         };
     }
 
+    /**
+     * firstnonblank。
+     * @param primary primary
+     * @param fallback fallback
+     * @return 查询结果
+     */
     public static String firstNonBlank(String primary, String fallback) {
         if (primary != null && !primary.isBlank()) {
             return primary;

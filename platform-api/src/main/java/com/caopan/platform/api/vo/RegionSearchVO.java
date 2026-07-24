@@ -8,6 +8,7 @@ public class RegionSearchVO extends RegionVO {
 
     private static final long serialVersionUID = 1L;
 
+    /** 全路径名称，用 / 连接 */
     private String fullPathName;
 
     public String getFullPathName() {

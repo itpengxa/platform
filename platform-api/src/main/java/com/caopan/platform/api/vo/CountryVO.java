@@ -4,22 +4,32 @@ import java.io.Serializable;
 
 /**
  * 国家视图对象。返回给客户端的国家信息。
- * flagUrl 为国旗 SVG 资源路径，不返回 Base64 避免 JSON 体积膨胀。
+ * 列表接口默认不返回 iconBase64（体积大）；字段保留兼容，按需扩展图标接口。
  * displayName 按请求的 lang 参数从 name/nameEn/nameCh 中选取。
  */
 public class CountryVO implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
+    /** 主键 ID */
     private Long id;
+    /** ISO 3166-1 alpha-2 */
     private String iso2;
+    /** ISO 3166-1 alpha-3 */
     private String iso3;
+    /** 本地/缺省名称 */
     private String name;
+    /** 英文名称 */
     private String nameEn;
+    /** 中文名称 */
     private String nameCh;
+    /** 按 lang 解析后的展示名 */
     private String displayName;
+    /** 国旗图标 Base64（可空） */
     private String iconBase64;
+    /** 国际电话区号 */
     private String phoneCode;
+    /** 该国数据最大层级 */
     private Integer maxLevel;
 
     public Long getId() { return id; }

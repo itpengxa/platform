@@ -6,30 +6,41 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 
 /**
- * 2026-07-23 GEO-001 国家扩展信息
- */
-@TableName("geo_country")
-/**
  * 国家扩展信息实体。与 geo_country 表对应。
  * 存储国家的 ISO 编码、多语言名称、图标、区号等信息。
  * max_level 标识该国数据的最深层级，告知调用方该国支持几级下钻。
  */
+@TableName("geo_country")
 public class GeoCountry {
 
     @TableId
+    /** 主键 ID */
     private Long id;
+    /** ISO 3166-1 alpha-2 */
     private String iso2;
+    /** ISO 3166-1 alpha-3 */
     private String iso3;
+    /** 本地/缺省名称 */
     private String name;
+    /** 英文名称 */
     private String nameEn;
+    /** 中文名称 */
     private String nameCh;
+    /** 国旗图标 Base64（可空） */
     private String iconBase64;
+    /** 国际电话区号 */
     private String phoneCode;
+    /** 货币代码 */
     private String currencyCode;
+    /** 该国数据最大层级 */
     private Integer maxLevel;
+    /** 状态：1启用 0停用 */
     private Integer status;
+    /** 排序值 */
     private Integer sort;
+    /** 创建时间 */
     private LocalDateTime createdAt;
+    /** 更新时间 */
     private LocalDateTime updatedAt;
 
     public Long getId() { return id; }

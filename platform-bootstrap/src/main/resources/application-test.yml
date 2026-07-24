@@ -1,0 +1,49 @@
+# =============================================================================
+# test 环境（本地/联调）
+# 激活：spring.profiles.active=test
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: test
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/platform?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: platform
+    password: platform
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      database: 0
+      timeout: 3s
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 4
+          min-idle: 1
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+
+platform:
+  geo:
+    cache:
+      redis-enabled: true
+      jitter-seconds: 120
+    rate-limit:
+      enabled: true
+      trust-forwarded-headers: false
+    auth:
+      enabled: false
+      token: ""
+
+logging:
+  level:
+    com.caopan.platform: INFO
+    com.caopan.platform.geo.mapper: DEBUG
+    com.caopan.platform.geo.cache: DEBUG

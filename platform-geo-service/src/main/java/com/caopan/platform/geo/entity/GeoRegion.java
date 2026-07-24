@@ -7,35 +7,51 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * 2026-07-23 GEO-001 行政区划树节点
- */
-@TableName("geo_region")
-/**
  * 行政区划树实体。与 geo_region 表对应。
  * 统一树模型：国家也是树节点（level=1），各国深度不一致由数据本身表达。
  * path 为物化路径（如 /240/3794/1570584/），一次查询取整条祖先链。
  */
+@TableName("geo_region")
 public class GeoRegion {
 
     @TableId
+    /** 主键 ID */
     private Long id;
+    /** 父节点 ID，国家为 0 */
     private Long parentId;
+    /** 所属国家 ISO2 编码 */
     private String countryCode;
+    /** 本地/缺省名称 */
     private String name;
+    /** 英文名称 */
     private String nameEn;
+    /** 中文名称 */
     private String nameCh;
+    /** 行政编码 */
     private String code;
+    /** 层级：1国家 2省州 3城市 4区县 5街镇 */
     private Integer level;
+    /** 区划类型枚举字符串 */
     private String regionType;
+    /** 物化路径，如 /1/200000001/300000010/ */
     private String path;
+    /** 是否末级（无子节点） */
     private Integer isLeaf;
+    /** 纬度 */
     private BigDecimal latitude;
+    /** 经度 */
     private BigDecimal longitude;
+    /** 数据来源 */
     private String source;
+    /** 来源侧原始 ID */
     private String sourceId;
+    /** 状态：1启用 0停用 */
     private Integer status;
+    /** 排序值 */
     private Integer sort;
+    /** 创建时间 */
     private LocalDateTime createdAt;
+    /** 更新时间 */
     private LocalDateTime updatedAt;
 
     public Long getId() { return id; }

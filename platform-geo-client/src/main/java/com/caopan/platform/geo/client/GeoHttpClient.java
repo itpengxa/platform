@@ -29,10 +29,19 @@ public class GeoHttpClient implements GeoService {
     private final String baseUrl;
     private final ObjectMapper objectMapper;
 
+    /**
+     * 构造 GeoHttpClient。
+     * @param baseUrl baseUrl
+     */
     public GeoHttpClient(String baseUrl) {
         this(baseUrl, new ObjectMapper());
     }
 
+    /**
+     * 构造 GeoHttpClient。
+     * @param baseUrl baseUrl
+     * @param objectMapper objectMapper
+     */
     public GeoHttpClient(String baseUrl, ObjectMapper objectMapper) {
         if (baseUrl == null || baseUrl.trim().isEmpty()) {
             throw new IllegalArgumentException("baseUrl required");
@@ -45,6 +54,12 @@ public class GeoHttpClient implements GeoService {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * 查询启用国家列表，支持语言与关键词过滤。
+     * @param lang 语言偏好（local/en/zh，可空）
+     * @param keyword 关键词，可空
+     * @return 查询结果
+     */
     @Override
     public List<CountryVO> listCountries(String lang, String keyword) {
         StringBuilder path = new StringBuilder("/api/geo/v1/countries?");
@@ -53,6 +68,12 @@ public class GeoHttpClient implements GeoService {
         return getList(path.toString(), new TypeReference<List<CountryVO>>() {});
     }
 
+    /**
+     * 按父节点 ID 查询直属子行政区划列表。
+     * @param parentId 父节点 ID
+     * @param lang 语言偏好（local/en/zh，可空）
+     * @return 查询结果
+     */
     @Override
     public List<RegionVO> listChildren(Long parentId, String lang) {
         StringBuilder path = new StringBuilder("/api/geo/v1/regions/children?");
@@ -73,12 +94,24 @@ public class GeoHttpClient implements GeoService {
 
     @Override
     public List<RegionVO> getPath(Long id, String lang) {
+        if (id == null || id <= 0) {
+            throw new IllegalArgumentException("id required");
+        }
         StringBuilder path = new StringBuilder("/api/geo/v1/regions/");
         path.append(id).append("/path?");
         appendParam(path, "lang", lang);
         return getList(path.toString(), new TypeReference<List<RegionVO>>() {});
     }
 
+    /**
+     * 按关键词搜索行政区划，返回命中节点及全路径名称。
+     * @param keyword 关键词，可空
+     * @param countryCode 国家 ISO2 编码
+     * @param level 层级过滤，可空
+     * @param limit 返回条数上限
+     * @param lang 语言偏好（local/en/zh，可空）
+     * @return 查询结果
+     */
     @Override
     public List<RegionSearchVO> search(String keyword, String countryCode, Integer level, Integer limit, String lang) {
         StringBuilder path = new StringBuilder("/api/geo/v1/regions/search?");
@@ -131,6 +164,12 @@ public class GeoHttpClient implements GeoService {
         }
     }
 
+    /**
+     * 追加param。
+     * @param sb sb
+     * @param name name
+     * @param value value
+     */
     private static void appendParam(StringBuilder sb, String name, String value) {
         if (value == null || value.isEmpty()) {
             return;

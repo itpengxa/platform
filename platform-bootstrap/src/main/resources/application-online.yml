@@ -1,0 +1,58 @@
+# =============================================================================
+# online 环境（生产/预发）
+# 激活：spring.profiles.active=online
+# java -jar platform-bootstrap.jar --spring.profiles.active=online
+# 敏感值请用环境变量覆盖，勿提交真实密码
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: online
+  datasource:
+    url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3306/platform?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=true}
+    username: ${MYSQL_USER:platform}
+    password: ${MYSQL_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DB:0}
+      timeout: 3s
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+
+# 生产关闭 Mapper SQL DEBUG，避免日志泄露与磁盘膨胀
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+platform:
+  geo:
+    cache:
+      redis-enabled: true
+      jitter-seconds: 600
+    rate-limit:
+      enabled: true
+      trust-forwarded-headers: false
+      fail-closed: true
+      default-interval-ms: 1000
+      tree-interval-ms: 2000
+    auth:
+      enabled: true
+      # 必须通过环境变量注入，长度建议 ≥16；空值将拒绝启动
+      token: ${GEO_INTERNAL_TOKEN:}
+
+logging:
+  level:
+    root: INFO
+    com.caopan.platform: INFO
+    com.caopan.platform.geo.mapper: WARN
+    com.caopan.platform.geo.cache: INFO

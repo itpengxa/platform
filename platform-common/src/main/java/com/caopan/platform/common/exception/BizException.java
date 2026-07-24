@@ -6,13 +6,23 @@ package com.caopan.platform.common.exception;
  */
 public class BizException extends RuntimeException {
 
+    /** 业务错误码，对应 {@link ErrorCode#getCode()} */
     private final int code;
 
+    /**
+     * 构造 BizException。
+     * @param errorCode errorCode
+     */
     public BizException(ErrorCode errorCode) {
         super(errorCode.getMessage());
         this.code = errorCode.getCode();
     }
 
+    /**
+     * 构造 BizException。
+     * @param code code
+     * @param message message
+     */
     public BizException(int code, String message) {
         super(message);
         this.code = code;
