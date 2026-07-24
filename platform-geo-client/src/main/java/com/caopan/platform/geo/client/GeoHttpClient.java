@@ -20,7 +20,9 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 2026-07-24 GEO-001 HTTP 客户端（JDK 8，实现 GeoService 契约）
+ * GEO HTTP 客户端。封装对 geo 服务 REST API 的 HTTP 调用。
+ * 使用 HttpURLConnection 零依赖，JDK 8 兼容。
+ * 提供类型安全的 Java 方法，隐藏 HTTP 序列化/反序列化细节。
  */
 public class GeoHttpClient implements GeoService {
 

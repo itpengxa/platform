@@ -15,6 +15,11 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * 2026-07-23 GEO-001 全局异常处理
  */
 @RestControllerAdvice
+/**
+ * 全局异常处理器。统一捕获 Controller 层未处理的异常，
+ * 转换为标准 Result 响应返回。
+ * BizException → 业务错误码；其他 → code=500。
+ */
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);

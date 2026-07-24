@@ -19,6 +19,11 @@ import java.util.concurrent.TimeUnit;
  * 2026-07-24 GEO-001 三级缓存装配：Caffeine L1 + Redis L2
  */
 @Configuration
+/**
+ * 缓存配置。配置 Caffeine (L1) + Redis (L2) 双层缓存。
+ * L1 热点本地缓存 5~10 分钟，L2 Redis 远程缓存 12~24 小时。
+ * L2 不可用时自动降级到 DB，服务不中断。
+ */
 public class CacheConfig {
 
     private static final Logger log = LoggerFactory.getLogger(CacheConfig.class);

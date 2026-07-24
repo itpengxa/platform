@@ -4,7 +4,9 @@ import java.io.Serial;
 import java.io.Serializable;
 
 /**
- * 2026-07-23 GEO-001 统一响应包装
+ * 统一 API 响应体。所有接口返回此结构。
+ * code=0 表示成功，非 0 表示业务异常。
+ * 泛型 data 承载具体业务数据。
  */
 public class Result<T> implements Serializable {
 

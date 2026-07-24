@@ -3,7 +3,9 @@ package com.caopan.platform.api.vo;
 import java.io.Serializable;
 
 /**
- * 2026-07-24 GEO-001 国家 VO（含 iconBase64）
+ * 国家视图对象。返回给客户端的国家信息。
+ * flagUrl 为国旗 SVG 资源路径，不返回 Base64 避免 JSON 体积膨胀。
+ * displayName 按请求的 lang 参数从 name/nameEn/nameCh 中选取。
  */
 public class CountryVO implements Serializable {
 

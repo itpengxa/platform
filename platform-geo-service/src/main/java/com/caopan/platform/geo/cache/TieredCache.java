@@ -11,8 +11,9 @@ import java.time.Duration;
 import java.util.function.Supplier;
 
 /**
- * 2026-07-24 GEO-001 三级缓存：本地 Caffeine → Redis → DB。
- * L2 命中或 DB 回源后，用虚拟线程异步回填 L1，避免阻塞请求线程。
+ * 三级缓存：Caffeine (L1) → Redis (L2) → DB (L3)。
+ * L2 Redis 读写异常时自动降级到 DB，不影响服务可用性。
+ * L1 Caffeine 按 Key 设置不同 TTL，热点数据（国家列表、省/城市级联）短 TTL 防脏读。
  */
 public class TieredCache {
 

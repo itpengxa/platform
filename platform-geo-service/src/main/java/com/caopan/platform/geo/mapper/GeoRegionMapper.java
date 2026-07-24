@@ -11,6 +11,10 @@ import java.util.List;
  * 2026-07-23 GEO-001 区划 Mapper
  */
 @Mapper
+/**
+ * 行政区划树 Mapper。MyBatis-Plus 基础 CRUD + 树形查询。
+ * 以 parent_id + path 索引实现高效树查询，无需递归 SQL。
+ */
 public interface GeoRegionMapper extends BaseMapper<GeoRegion> {
 
     List<GeoRegion> listByParentId(@Param("parentId") Long parentId);
