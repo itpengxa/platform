@@ -7,14 +7,10 @@ spring:
   threads:
     virtual:
       enabled: true
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
-      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
   datasource:
     url: jdbc:mysql://127.0.0.1:3306/platform?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
-    username: root
-    password: root
+    username: platform
+    password: platform
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 20
@@ -25,8 +21,11 @@ spring:
       port: 6379
       database: 0
       timeout: 3s
-  cache:
-    type: caffeine
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
 
 mybatis-plus:
   mapper-locations: classpath*:mapper/**/*.xml
@@ -36,7 +35,14 @@ mybatis-plus:
   global-config:
     banner: false
 
+platform:
+  geo:
+    cache:
+      # false 时仅 L1+DB；L2 Redis 读写异常时自动降级
+      redis-enabled: true
+
 logging:
   level:
     com.caopan.platform: INFO
     com.caopan.platform.geo.mapper: DEBUG
+    com.caopan.platform.geo.cache: DEBUG

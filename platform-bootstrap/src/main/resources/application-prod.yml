@@ -1,0 +1,34 @@
+# =============================================
+# platform-prod.yml — 生产环境配置
+# 使用前复制到 bootstrap 同目录，启动时指定 profile
+# java -jar platform-bootstrap.jar --spring.profiles.active=prod
+# =============================================
+spring:
+  datasource:
+    # === 云端 MySQL 配置（替换以下值）===
+    url: jdbc:mysql://<云数据库地址>:3306/platform?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=true
+    username: <数据库用户名>
+    password: <数据库密码>
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+  data:
+    redis:
+      # === 云端 Redis 配置 ===
+      host: <云 Redis 地址>   # 例如: r-xxx.redis.rds.aliyuncs.com
+      port: 6379               # 默认端口
+      password: <Redis 密码>   # 如果没有密码可以不写
+      database: 0
+      timeout: 3s
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+
+# 如果 Redis 不需要（只用本地 Caffeine 缓存），可以关闭
+platform:
+  geo:
+    cache:
+      redis-enabled: true      # false = 不用 Redis，只用本地缓存

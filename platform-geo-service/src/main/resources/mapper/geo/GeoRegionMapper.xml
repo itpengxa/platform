@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caopan.platform.geo.mapper.GeoRegionMapper">
+
+    <sql id="RegionColumns">
+        id, parent_id AS parentId, country_code AS countryCode,
+        name, name_en AS nameEn, name_ch AS nameCh, code, level,
+        region_type AS regionType, path, is_leaf AS isLeaf,
+        latitude, longitude, source, source_id AS sourceId,
+        status, sort, created_at AS createdAt, updated_at AS updatedAt
+    </sql>
+
+    <select id="listByParentId" resultType="com.caopan.platform.geo.entity.GeoRegion">
+        SELECT <include refid="RegionColumns"/>
+        FROM geo_region
+        WHERE parent_id = #{parentId} AND status = 1
+        ORDER BY sort ASC, id ASC
+    </select>
+
+    <select id="findEnabledById" resultType="com.caopan.platform.geo.entity.GeoRegion">
+        SELECT <include refid="RegionColumns"/>
+        FROM geo_region
+        WHERE id = #{id} AND status = 1
+        LIMIT 1
+    </select>
+
+    <select id="findCountryByCode" resultType="com.caopan.platform.geo.entity.GeoRegion">
+        SELECT <include refid="RegionColumns"/>
+        FROM geo_region
+        WHERE country_code = #{countryCode} AND level = 1 AND status = 1
+        LIMIT 1
+    </select>
+
+    <select id="listSubtree" resultType="com.caopan.platform.geo.entity.GeoRegion">
+        SELECT <include refid="RegionColumns"/>
+        FROM geo_region
+        WHERE status = 1
+          AND path LIKE CONCAT(#{pathPrefix}, '%')
+        <if test="maxLevel != null">
+            AND level &lt;= #{maxLevel}
+        </if>
+        ORDER BY level ASC, sort ASC, id ASC
+    </select>
+
+    <select id="listByIds" resultType="com.caopan.platform.geo.entity.GeoRegion">
+        SELECT <include refid="RegionColumns"/>
+        FROM geo_region
+        WHERE status = 1
+          AND id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <select id="search" resultType="com.caopan.platform.geo.entity.GeoRegion">
+        SELECT <include refid="RegionColumns"/>
+        FROM geo_region
+        WHERE status = 1
+          AND (name LIKE CONCAT('%', #{keyword}, '%')
+            OR name_en LIKE CONCAT('%', #{keyword}, '%')
+            OR name_ch LIKE CONCAT('%', #{keyword}, '%'))
+        <if test="countryCode != null and countryCode != ''">
+            AND country_code = #{countryCode}
+        </if>
+        <if test="level != null">
+            AND level = #{level}
+        </if>
+        ORDER BY level ASC, sort ASC, id ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="countChildrenByParentIds" resultType="map">
+        SELECT parent_id AS parentId, COUNT(*) AS cnt
+        FROM geo_region
+        WHERE status = 1
+          AND parent_id IN
+        <foreach collection="parentIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        GROUP BY parent_id
+    </select>
+</mapper>

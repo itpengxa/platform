@@ -6,8 +6,11 @@
 
 | 模块 | 说明 |
 |------|------|
-| platform-common | 统一响应、异常、工具 |
-| platform-geo | 行政区划查询（首期） |
+| platform-api | 契约层 VO/Enum + GeoService（JDK 8） |
+| platform-common | 统一响应、异常、LangUtil |
+| platform-geo-service | 行政区划实现 + Mapper（无 Controller） |
+| platform-geo-web | 行政区划 HTTP Controller |
+| platform-geo-client | 可选 HTTP SDK（JDK 8） |
 | platform-bootstrap | 启动与打包入口 |
 
 ## 快速开始

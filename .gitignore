@@ -8,3 +8,7 @@ target/
 *.log
 LOG_HOME_IS_UNDEFINED/
 .vscode/
+scripts/geo/raw/
+scripts/geo/validated/
+scripts/geo/logs/
+scripts/geo/clean/
