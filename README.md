@@ -1,7 +1,7 @@
 # platform（底座）
 
 模块化单体 **基础能力服务**，当前首发能力为 **全球行政区划查询（GEO-001）**。  
-业务方通过 HTTP 调用；本仓库为纯后端能力，不含业务前端页面（`platform-web-ui` 仅占位/静态资源）。
+业务方通过 HTTP 调用。GEO 调试页与嵌入选择器由 **platform-bootstrap** 静态资源提供（见下文「页面入口」）；`platform-web-ui` 仅为 Maven 占位模块。
 
 | 项 | 说明 |
 |----|------|
@@ -50,7 +50,7 @@ platform/                          # 父 POM
 ├── platform-geo-service/          # 实现 + Entity + Mapper + 三级缓存（无 Controller）
 ├── platform-geo-web/              # GeoController + TokenIssueController
 ├── platform-geo-client/           # 可选 HTTP SDK（JDK 8）
-├── platform-web-ui/               # 静态/占位（非本需求核心）
+├── platform-web-ui/               # Maven 占位（页面在 bootstrap/static）
 ├── platform-bootstrap/            # 启动入口、Filter、配置、可执行 JAR
 ├── sql/                           # schema 与校验脚本
 └── scripts/geo/                   # 离线灌库 / ETL（应用内无导入接口）
@@ -187,6 +187,14 @@ mysql -u platform -p platform < sql/schema.sql
 mvn -pl platform-bootstrap -am spring-boot:run
 # 默认 profile=test，端口 8088
 ```
+
+**页面入口（随 bootstrap 启动）：**
+
+| 页面 | URL |
+|------|-----|
+| API 调试器 | http://localhost:8088/api/validator |
+| 地区选择器 | http://localhost:8088/api/picker |
+| `/api/` | 同调试器 |
 
 冒烟示例（test 默认无鉴权）：
 

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>选择地区</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: transparent; }
+    body.embed-full { background: #f5f5f5; }
+  </style>
+</head>
+<body>
+<script src="geo-picker.js"></script>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var embed = q.get('embed') !== '0';
+  if (embed) document.body.classList.add('embed-full');
+
+  var cfg = {
+    clientCode: q.get('clientCode') || 'embed',
+    clientName: q.get('clientName') || q.get('clientCode') || 'H5 Embed',
+    lang: q.get('lang') || 'en',
+    apiBase: q.get('apiBase') || '',
+    primaryColor: q.get('primaryColor') || '#e1251b',
+    onConfirm: function () {
+      if (q.get('autoClose') !== '0') {
+        try { history.back(); } catch (e) {}
+      }
+    },
+    onCancel: function () {
+      if (q.get('autoClose') !== '0') {
+        try { history.back(); } catch (e) {}
+      }
+    }
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { PlatformGeoPicker.open(cfg); });
+  } else {
+    PlatformGeoPicker.open(cfg);
+  }
+})();
+</script>
+</body>
+</html>

@@ -11,13 +11,15 @@ header{background:#161b22;border-bottom:1px solid #30363d;padding:10px 16px;disp
 header h1{font-size:15px;font-weight:600;color:#f0f6fc;white-space:nowrap}
 .container{display:flex;flex:1;overflow:hidden}
 
-/* 三列布局 */
-.col{display:flex;flex-direction:column;overflow:hidden;border-right:1px solid #30363d}
-.col-cascade{width:240px;min-width:240px;background:#0d1117}
-.col-tree{width:320px;min-width:280px;background:#0d1117}
-.col-json{flex:1;background:#161b22}
+/* 三列布局 30% / 30% / 40% */
+.col{display:flex;flex-direction:column;overflow:hidden;border-right:1px solid #30363d;min-width:0}
+.col-cascade{flex:3 1 0;background:#0d1117}
+.col-tree{flex:3 1 0;background:#0d1117}
+.col-json{flex:4 1 0;border-right:none;background:#161b22}
 
 .col-header{padding:6px 10px;font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #30363d;flex-shrink:0}
+.col-header-tools{display:flex;align-items:center;gap:4px;padding:4px 8px;font-size:10px;color:#8b949e;border-bottom:1px solid #30363d;flex-shrink:0}
+.col-header-tools select,.col-header-tools button{padding:2px 6px;background:#21262d;border:1px solid #30363d;border-radius:3px;color:#c9d1d9;font-size:10px;outline:none;cursor:pointer}
 .col-body{flex:1;overflow-y:auto}
 
 /* Cascade selectors */
@@ -58,8 +60,6 @@ header h1{font-size:15px;font-weight:600;color:#f0f6fc;white-space:nowrap}
 .search-res{max-height:150px;overflow-y:auto;border-bottom:1px solid #30363d;background:#161b22;display:none}
 .search-res .sr{padding:4px 8px;font-size:11px;cursor:pointer;border-bottom:1px solid #21262d}
 .search-res .sr:hover{background:#1f2d3d}
-
-@media(max-width:1100px){.col-cascade{width:200px;min-width:180px}.col-tree{width:240px;min-width:200px}}
 </style>
 </head>
 <body>
@@ -70,29 +70,45 @@ header h1{font-size:15px;font-weight:600;color:#f0f6fc;white-space:nowrap}
     <span style="color:#30363d">|</span>
     <label><span>语言:</span>
       <select id="langSelect" onchange="onLangChange()" style="padding:2px 5px;background:#21262d;border:1px solid #30363d;border-radius:3px;color:#c9d1d9;font-size:11px;outline:none">
-        <option value="">默认</option><option value="zh">中文</option><option value="en">English</option>
+        <option value="">自动</option><option value="zh">中文</option><option value="en" selected>English</option>
       </select>
     </label>
+    <label title="platform.geo.auth 开启后必填"><span>Token:</span>
+      <input id="tokenInput" type="password" placeholder="X-Platform-Token" autocomplete="off"
+        style="width:min(220px,28vw);padding:2px 6px;background:#21262d;border:1px solid #30363d;border-radius:3px;color:#c9d1d9;font-size:11px;outline:none"
+        onchange="onTokenSaved()" onblur="onTokenSaved()">
+    </label>
+    <input id="clientCodeInput" value="debug" title="签发 clientCode"
+      style="width:52px;padding:2px 5px;background:#21262d;border:1px solid #30363d;border-radius:3px;color:#8b949e;font-size:10px;outline:none">
+    <button type="button" onclick="issueToken()" style="padding:2px 8px;background:#238636;border:1px solid #2ea043;border-radius:3px;color:#fff;font-size:10px;cursor:pointer">签发</button>
     <a href="javascript:location.reload()" style="color:#58a6ff;text-decoration:none">刷新</a>
   </div>
 </header>
 <div class="container">
-  <!-- Column 1: Cascading -->
   <div class="col col-cascade">
     <div class="col-header">⬇ 逐级选择</div>
+    <div class="search-bar">
+      <input id="cascadeSearch" placeholder="关键词搜索区划..." onkeydown="if(event.key==='Enter')cascadeSearch()">
+      <button type="button" onclick="cascadeSearch()">搜</button>
+    </div>
+    <div class="search-res" id="cascadeSearchRes"></div>
     <div class="col-body" id="cascadeBody"></div>
   </div>
-  <!-- Column 2: Tree -->
   <div class="col col-tree">
-    <div class="col-header">🌳 树状展开</div>
-    <div class="search-bar">
-      <input id="searchInput" placeholder="搜索..." onkeydown="if(event.key==='Enter')doSearch()">
-      <button onclick="doSearch()">搜</button>
+    <div class="col-header-tools">
+      <span>🌳 树状展开</span>
+      <span style="flex:1"></span>
+      <select id="depthSelect" onchange="refreshTree()" title="预加载层级">
+        <option value="2">2级</option><option value="3">3级</option><option value="4" selected>4级</option><option value="5">5级</option>
+      </select>
+      <button type="button" onclick="refreshTree()" title="重新请求树接口">🔄</button>
     </div>
-    <div class="search-res" id="searchRes"></div>
+    <div class="search-bar">
+      <input id="treeFilterInput" placeholder="过滤树节点..." oninput="filterTree()" onkeydown="if(event.key==='Escape'){this.value='';filterTree()}">
+      <button type="button" onclick="document.getElementById('treeFilterInput').value='';filterTree()" title="清除过滤">✕</button>
+    </div>
     <div class="col-body" id="treeBody"><div class="loading">选中国家</div></div>
   </div>
-  <!-- Column 3: JSON -->
   <div class="col col-json">
     <div class="json-tabs">
       <button id="tabResponse" class="active" onclick="switchTab('response')">📄 响应</button>
@@ -106,13 +122,55 @@ header h1{font-size:15px;font-weight:600;color:#f0f6fc;white-space:nowrap}
 <script>
 const TAG_COLORS={COUNTRY:'#58a6ff',PROVINCE:'#3fb950',STATE:'#3fb950',CITY:'#d29922',DISTRICT:'#db6d28',WARD:'#f85149'};
 const LEVEL_NAMES=['国家','省/州','城市','区/县','街道/镇','6','7','8'];
+const TOKEN_STORAGE_KEY='platform_geo_x_platform_token';
 let countryMeta={};let currentTab='response';let lastPathData=null;
+let lastCountryIso='';let lastTreeRootId=null;
 
 function getBase(){return ''}
 function getLang(){return document.getElementById('langSelect').value}
+function getToken(){
+  const el=document.getElementById('tokenInput');
+  const v=(el&&el.value?el.value:'').trim();
+  if(v)return v;
+  try{return(localStorage.getItem(TOKEN_STORAGE_KEY)||'').trim();}catch(e){return '';}
+}
+function onTokenSaved(){
+  const t=getToken();
+  try{if(t)localStorage.setItem(TOKEN_STORAGE_KEY,t);else localStorage.removeItem(TOKEN_STORAGE_KEY);}catch(e){}
+}
+function authHeaders(){
+  const h={'Accept':'application/json'};
+  const t=getToken();
+  if(t)h['X-Platform-Token']=t;
+  return h;
+}
+function maskToken(t){
+  if(!t)return '(未设置)';
+  if(t.length<=12)return t.slice(0,4)+'…';
+  return t.slice(0,8)+'…'+t.slice(-4);
+}
+async function issueToken(){
+  const code=(document.getElementById('clientCodeInput').value||'debug').trim();
+  showMeta('签发 Token…');
+  try{
+    const r=await fetch('/api/platform/v1/auth/token/issue',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Accept':'application/json'},
+      body:JSON.stringify({clientCode:code,clientName:'GEO Debug UI'})
+    });
+    const d=await r.json();
+    if(!r.ok||d.code!==0)throw new Error(d.message||('HTTP '+r.status));
+    const token=d.data&&d.data.token;
+    if(!token)throw new Error('响应无 token');
+    document.getElementById('tokenInput').value=token;
+    onTokenSaved();
+    showMeta('✅ 已签发 '+code+' ('+(d.data.tokenPrefix||'')+')');
+    init();
+  }catch(e){showMeta('签发失败: '+e.message,true);}
+}
 async function af(path){
   const lang=getLang();const sep=path.includes('?')?'&':'?';const url=getBase()+path+sep+'lang='+lang;
-  const r=await fetch(url,{headers:{'Accept':'application/json'}});
+  const r=await fetch(url,{headers:authHeaders()});
   if(!r.ok){let b='';try{b=await r.text()}catch(e){}throw new Error('HTTP '+r.status+': '+b.slice(0,200));}
   const d=await r.json();
   if(d.code!==undefined&&d.code!==null){if(d.code!==0)throw new Error('业务错误 '+d.code+': '+d.message);return d.data||[];}
@@ -121,8 +179,7 @@ async function af(path){
 function sh(j){j=j.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
   return j.replace(/"((?:[^"\\]|\\.)*)"\s*:/g,'<span class="json-key">"$1"</span>:').replace(/:\s*"((?:[^"\\]|\\.)*)"/g,':<span class="json-string">"$1"</span>').replace(/\b(-?\d+\.?\d*)\b/g,'<span class="json-number">$1</span>').replace(/\b(true|false)\b/g,'<span class="json-bool">$1</span>').replace(/\bnull\b/g,'<span class="json-null">null</span>');}
 
-// ===== Init & Country =====
-let cascadeSelections={}; // {level: id}
+let cascadeSelections={};
 
 async function init(){
   buildCascadeHTML();
@@ -153,14 +210,11 @@ function buildCascadeHTML(){
   document.getElementById('cascadeBody').innerHTML=h;
 }
 
-// ===== Cascade =====
 async function onCascade(level){
   const sel=document.getElementById('sel-'+level);const val=sel.value;
   for(let i=level+1;i<5;i++){const s=document.getElementById('sel-'+i);s.innerHTML='<option value="">请先选择上一级</option>';s.disabled=true;}
   if(!val){delete cascadeSelections[level];return;}
   cascadeSelections[level]=parseInt(val);
-  
-  // 显示 JSON
   try{
     const children=await af('/api/geo/v1/regions/children?parentId='+val);
     let pathData=[];try{pathData=await af('/api/geo/v1/regions/'+val+'/path');}catch(e){}
@@ -168,7 +222,6 @@ async function onCascade(level){
     showJson({selected:{id:parseInt(val),level},children:children.slice(0,100),childrenTotal:children.length,path:pathData},
       'GET /api/geo/v1/regions/children?parentId='+val);
     showMeta('📍 L'+(level+1)+' | 子级:'+children.length+(pathData.length?' path:'+pathData.length+'级':''));
-    
     if(children.length===0)return;
     const ns=document.getElementById('sel-'+(level+1));
     if(!ns)return;
@@ -181,14 +234,32 @@ async function onCascade(level){
   }catch(e){showJson({error:e.message},null);}
 }
 
-// ===== Tree =====
-async function onCountryChange(iso2){
+async function onCountryChange(iso2,rootId){
+  lastCountryIso=iso2;
+  lastTreeRootId=rootId||null;
   const tree=document.getElementById('treeBody');
   tree.innerHTML='<div class="loading">🌳 加载中...</div>';
+  const depth=document.getElementById('depthSelect').value;
+  let reqTitle='GET /api/geo/v1/regions/tree?countryCode='+encodeURIComponent(iso2)+'&depth='+depth;
+  let apiPath='/api/geo/v1/regions/tree?countryCode='+encodeURIComponent(iso2)+'&depth='+depth;
+  if(rootId){reqTitle+='&rootId='+rootId;apiPath+='&rootId='+rootId;}
   try{
-    const data=await af('/api/geo/v1/regions/tree?countryCode='+iso2+'&depth=5');
-    tree.innerHTML='';tree.appendChild(buildNode(data,0));
-  }catch(e){tree.innerHTML='<div class="loading" style="color:#f85149">❌ '+e.message+'</div>';}
+    const data=await af(apiPath);
+    tree.innerHTML='';
+    if(data)tree.appendChild(buildNode(data,0));
+    showJson(data,reqTitle);
+    showMeta('🌳 depth='+depth+' | 已加载');
+    switchTab('response');
+    filterTree();
+  }catch(e){
+    tree.innerHTML='<div class="loading" style="color:#f85149">❌ '+e.message+'</div>';
+    showJson({error:e.message},reqTitle);
+    showMeta('❌ '+e.message,true);
+  }
+}
+function refreshTree(){
+  if(!lastCountryIso){showMeta('请先选择国家',true);return;}
+  onCountryChange(lastCountryIso,lastTreeRootId);
 }
 
 function buildNode(node,level){
@@ -204,7 +275,7 @@ function buildNode(node,level){
   if(hasCh){const ct=document.createElement('span');ct.className='node-count';ct.textContent=node.children.length+'';row.appendChild(ct);}
   w.appendChild(row);
   if(hasCh){
-    const cc=document.createElement('div');cc.className='tree-children';
+    const cc=document.createElement('div');cc.className='tree-children collapsed';
     node.children.forEach(c=>cc.appendChild(buildNode(c,level+1)));w.appendChild(cc);
     tg.onclick=function(e){e.stopPropagation();cc.classList.toggle('collapsed');tg.textContent=cc.classList.contains('collapsed')?'▸':'▾';};
   }
@@ -227,7 +298,6 @@ async function treeSelect(node,level,rowEl){
   }catch(e){showJson({error:e.message},null);}
 }
 
-// ===== JSON/Render =====
 function showJson(data,title){
   const body=document.getElementById('jsonBody');
   let c=title?'/* '+title+' */\n\n':'';c+=sh(JSON.stringify(data,null,2));
@@ -243,39 +313,62 @@ function switchTab(tab){
   if(tab==='response'){
     if(body.dataset.rawData){body.innerHTML=sh(body.dataset.rawData);}
   }else if(tab==='request'){
-    body.innerHTML='<span style="color:#8b949e">// 请求信息</span>\n\n<span class="json-key">"method"</span>: <span class="json-string">"GET"</span>\n<span class="json-key">"url"</span>: <span class="json-string">"'+body.dataset.requestPath+'"</span>\n\n<span style="color:#8b949e">// 请求头</span>\n<span class="json-key">"Accept"</span>: <span class="json-string">"application/json"</span>';
+    body.innerHTML='<span style="color:#8b949e">// 请求信息</span>\n\n<span class="json-key">"method"</span>: <span class="json-string">"GET"</span>\n<span class="json-key">"url"</span>: <span class="json-string">"'+body.dataset.requestPath+'"</span>\n\n<span style="color:#8b949e">// 请求头</span>\n<span class="json-key">"Accept"</span>: <span class="json-string">"application/json"</span>\n<span class="json-key">"X-Platform-Token"</span>: <span class="json-string">"'+maskToken(getToken())+'"</span>';
   }else if(tab==='path'){
     if(lastPathData&&lastPathData.length>0)body.innerHTML=sh(JSON.stringify(lastPathData,null,2));
     else body.innerHTML='<span style="color:#8b949e">// 点击节点查看祖先链</span>';
   }
 }
 
-// ===== Search =====
-async function doSearch(){
-  const inp=document.getElementById('searchInput');const kw=inp.value.trim();if(!kw)return;
-  const rd=document.getElementById('searchRes');rd.style.display='block';rd.innerHTML='<div class="sr">搜索中...</div>';
+async function cascadeSearch(){
+  const inp=document.getElementById('cascadeSearch');const kw=inp.value.trim();if(!kw){showMeta('请输入关键词',true);return;}
+  const sel=document.getElementById('sel-0');const countryId=parseInt(sel.value,10);
+  const cc=(countryMeta[countryId]&&countryMeta[countryId].iso2)||'';
+  if(!cc){showMeta('请先选择国家再搜索',true);return;}
+  const rd=document.getElementById('cascadeSearchRes');rd.style.display='block';rd.innerHTML='<div class="sr">搜索中...</div>';
+  const reqTitle='GET /api/geo/v1/regions/search?keyword='+encodeURIComponent(kw)+'&countryCode='+cc+'&limit=30';
   try{
-    const d=await af('/api/geo/v1/regions/search?keyword='+encodeURIComponent(kw)+'&limit=20');
-    showJson(d,'GET /api/geo/v1/regions/search?keyword='+encodeURIComponent(kw));
+    const d=await af('/api/geo/v1/regions/search?keyword='+encodeURIComponent(kw)+'&countryCode='+cc+'&limit=30');
+    showJson(d,reqTitle);
+    showMeta('🔍 "'+kw+'" → '+d.length+' 条');
+    switchTab('response');
     if(!d.length){rd.innerHTML='<div class="sr" style="color:#8b949e">无结果</div>';return;}
-    rd.innerHTML='';d.slice(0,30).forEach(r=>{
+    rd.innerHTML='';
+    d.slice(0,50).forEach(r=>{
       const div=document.createElement('div');div.className='sr';
       div.innerHTML='<span>'+(r.displayName||r.nameCh||r.name||r.nameEn)+'</span> <span style="color:#8b949e">'+(r.fullPathName||r.regionType||'')+'</span>';
       rd.appendChild(div);
     });
-  }catch(e){rd.innerHTML='<div class="sr" style="color:#f85149">'+e.message+'</div>';}
+  }catch(e){
+    rd.innerHTML='<div class="sr" style="color:#f85149">'+e.message+'</div>';
+    showJson({error:e.message},reqTitle);
+    showMeta('❌ '+e.message,true);
+  }
+}
+
+function filterTree(){
+  const kw=document.getElementById('treeFilterInput').value.trim().toLowerCase();
+  document.querySelectorAll('#treeBody .tree-node').forEach(el=>{
+    const name=(el.querySelector('.node-name')&&el.querySelector('.node-name').textContent||'').toLowerCase();
+    el.style.display=!kw||name.includes(kw)?'':'none';
+  });
 }
 
 function onLangChange(){init();}
+(function bootstrapToken(){
+  try{
+    const saved=localStorage.getItem(TOKEN_STORAGE_KEY);
+    if(saved)document.getElementById('tokenInput').value=saved;
+  }catch(e){}
+})();
 init();
 
-// Patch cascade: when country is selected, also trigger tree load
 const origOnCascade=onCascade;
 onCascade=function(level){
   origOnCascade(level);
   if(level===0){
     const sel=document.getElementById('sel-0');const v=sel.value;
-    if(v){const m=countryMeta[parseInt(v)];if(m)onCountryChange(m.iso2);}
+    if(v){const m=countryMeta[parseInt(v,10)];if(m)onCountryChange(m.iso2,parseInt(v,10));}
   }
 };
 </script>

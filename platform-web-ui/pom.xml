@@ -13,7 +13,7 @@
 
     <artifactId>platform-web-ui</artifactId>
     <packaging>jar</packaging>
-    <description>GEO 验证工具前端页面（纯静态，无 Java 代码）</description>
+    <description>占位模块；GEO 调试/选择器页面已迁至 platform-bootstrap/static</description>
 
     <!-- 零依赖，不依赖任何其他 platform 模块 -->
 
