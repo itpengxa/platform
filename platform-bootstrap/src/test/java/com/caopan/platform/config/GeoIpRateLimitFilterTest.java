@@ -15,13 +15,14 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
-import java.time.Duration;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -93,7 +94,7 @@ class GeoIpRateLimitFilterTest {
     void redisFailClosed_rejectsWhenRedisThrows() throws Exception {
         when(redisProvider.getIfAvailable()).thenReturn(redisTemplate);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.setIfAbsent(anyString(), eq("1"), any(Duration.class)))
+        when(valueOperations.setIfAbsent(anyString(), eq("1"), anyLong(), eq(TimeUnit.MILLISECONDS)))
                 .thenThrow(new RuntimeException("redis down"));
 
         GeoIpRateLimitFilter filter = newFilter(true, true);
@@ -102,6 +103,25 @@ class GeoIpRateLimitFilterTest {
 
         assertEquals(429, resp.getStatus());
         verify(filterChain, never()).doFilter(any(), any());
+    }
+
+    @Test
+    void redisDirtyKeyWithoutTtl_isRepairedAndAllowsRequest() throws Exception {
+        when(redisProvider.getIfAvailable()).thenReturn(redisTemplate);
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(anyString(), eq("1"), anyLong(), eq(TimeUnit.MILLISECONDS)))
+                .thenReturn(false)
+                .thenReturn(true);
+        when(redisTemplate.getExpire(anyString(), eq(TimeUnit.MILLISECONDS))).thenReturn(-1L);
+        when(redisTemplate.delete(anyString())).thenReturn(Boolean.TRUE);
+
+        GeoIpRateLimitFilter filter = newFilter(true, false);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        filter.doFilter(geoRequest("/api/geo/v1/countries"), resp, filterChain);
+
+        assertEquals(200, resp.getStatus());
+        verify(filterChain).doFilter(any(), any());
+        verify(redisTemplate).delete(anyString());
     }
 
     @Test

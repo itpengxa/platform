@@ -89,13 +89,13 @@ class GeoDataCacheTest {
     void loadTreeNodes_countryRootCapsDepthAndLoads() {
         GeoRegion root = region(1L, 1, "VN", "/1/");
         when(geoRegionMapper.findCountryByCode("VN")).thenReturn(root);
-        when(geoRegionMapper.listSubtree(eq("/1/"), eq(3), eq(100)))
+        when(geoRegionMapper.listSubtree(eq("/1/"), eq(4), eq(100)))
                 .thenReturn(List.of(root));
 
-        // depth=5 国家级应封顶为 3，并按 depth=3 缓存键加载
+        // depth=5 国家级应封顶为 4，并按 depth=4 缓存键加载（maxLevel=1+4-1=4）
         GeoDataCache.TreeLoadResult result = geoDataCache.loadTreeNodes("VN", null, 5);
         assertEquals(1L, result.getRoot().getId());
-        verify(geoRegionMapper).listSubtree("/1/", 3, 100);
+        verify(geoRegionMapper).listSubtree("/1/", 4, 100);
     }
 
     @Test

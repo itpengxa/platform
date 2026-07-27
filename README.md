@@ -19,7 +19,7 @@
 
 - 国家列表（关键词 / ISO2；列表默认**不含**大字段 `iconBase64`）
 - 父子级联下钻（`children`）
-- 子树查询（`tree`，国家级 depth 默认封顶 3，行数硬限制）
+- 子树查询（`tree`，国家级 depth 封顶 4，行数硬限制）
 - 祖先链回显（`path`）
 - 关键词前缀搜索（**强制国家维度**，禁止 `%`/`_`）
 - 多语言展示名：`lang=local|en|zh`（缓存 Key 不含 lang，Service 层计算 `displayName`）
@@ -211,7 +211,7 @@ curl -s -H "X-Platform-Token: $GEO_INTERNAL_TOKEN" \
 |------|------|----------|------|
 | GET | `/api/geo/v1/countries` | `lang`, `keyword` | 国家列表；keyword 禁 `%`/`_` |
 | GET | `/api/geo/v1/regions/children` | `parentId`*, `lang` | 直属子级；父不存在 → 40001 |
-| GET | `/api/geo/v1/regions/tree` | `countryCode`*, `rootId`, `depth`, `lang` | depth 默认 3，范围 1~5；国家级 depth>3 封顶 3；超 `tree-max-rows` 拒绝 |
+| GET | `/api/geo/v1/regions/tree` | `countryCode`*, `rootId`, `depth`, `lang` | depth 默认 3，范围 1~5；国家级 depth>4 封顶 4；超 `tree-max-rows` 拒绝 |
 | GET | `/api/geo/v1/regions/{id}/path` | `lang` | 国家→…→当前祖先链 |
 | GET | `/api/geo/v1/regions/search` | `keyword`*, `countryCode`*, `level`, `limit`, `lang` | 前缀匹配；keyword≥2；limit 1~100，默认 20 |
 

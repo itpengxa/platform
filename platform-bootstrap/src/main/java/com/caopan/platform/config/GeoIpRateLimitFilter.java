@@ -22,10 +22,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
@@ -112,8 +112,7 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
         String ip = resolveClientIp(request, trustForwardedHeaders);
         String limitKey = ip + ":" + bucket;
 
-       // if (!tryAcquire(limitKey, intervalMs)) {
-        if (false) {
+        if (!tryAcquire(limitKey, intervalMs)) {
             log.warn("geo rate limited, ip={}, uri={}, intervalMs={}", ip, uri, intervalMs);
             writeLimited(response, request);
             return;
@@ -135,10 +134,7 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
     private boolean tryAcquire(String limitKey, long intervalMs) {
         if (redisEnabled) {
             try {
-                String redisKey = REDIS_KEY_PREFIX + limitKey;
-                Boolean ok = redisTemplate.opsForValue()
-                        .setIfAbsent(redisKey, "1", Duration.ofMillis(intervalMs));
-                return Boolean.TRUE.equals(ok);
+                return tryAcquireRedis(REDIS_KEY_PREFIX + limitKey, Math.max(intervalMs, 1L));
             } catch (Exception e) {
                 if (failClosed) {
                     log.warn("redis rate-limit failed, fail-closed reject, key={}, err={}", limitKey, e.toString());
@@ -152,6 +148,31 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
             return false;
         }
         return tryAcquireLocal(limitKey, intervalMs);
+    }
+
+    /**
+     * Redis SET NX + PX（毫秒）。若历史脏 key 无 TTL（PTTL=-1）会永不过期，主动删除后重试一次。
+     */
+    private boolean tryAcquireRedis(String redisKey, long ttlMs) {
+        Boolean ok = redisTemplate.opsForValue()
+                .setIfAbsent(redisKey, "1", ttlMs, TimeUnit.MILLISECONDS);
+        if (Boolean.TRUE.equals(ok)) {
+            // 个别客户端/版本偶发未带过期：强制补 PX，避免限流锁死
+            Long pttl = redisTemplate.getExpire(redisKey, TimeUnit.MILLISECONDS);
+            if (pttl != null && pttl == -1L) {
+                redisTemplate.expire(redisKey, ttlMs, TimeUnit.MILLISECONDS);
+            }
+            return true;
+        }
+        Long pttl = redisTemplate.getExpire(redisKey, TimeUnit.MILLISECONDS);
+        // -2 不存在（并发下刚过期）→ 允许本请求重试占坑；-1 无过期 → 删掉重试
+        if (pttl != null && pttl == -1L) {
+            log.warn("rate-limit dirty key without TTL, delete and retry, key={}", redisKey);
+            redisTemplate.delete(redisKey);
+            return Boolean.TRUE.equals(redisTemplate.opsForValue()
+                    .setIfAbsent(redisKey, "1", ttlMs, TimeUnit.MILLISECONDS));
+        }
+        return false;
     }
 
     private boolean tryAcquireLocal(String limitKey, long intervalMs) {

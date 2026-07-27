@@ -76,7 +76,7 @@ public class GeoController {
 
     /**
      * 按国家编码组装行政区划树。
-     * <p>depth 可空，缺省为 3（国家→省→市），范围 1~5，禁止无界全量加载。</p>
+     * <p>depth 可空，缺省为 3（国家→省→市），范围 1~5；国家级根 depth&gt;4 封顶为 4（至区县），禁止无界全量加载。</p>
      *
      * @param countryCode 国家 ISO2 编码（必填）
      * @param rootId      可选根节点 ID；为空则从国家级节点开始

@@ -139,7 +139,7 @@ public class GeoDataCache {
     }
 
     /**
-     * 加载子树节点（depth 缺省 3；国家级树 depth&gt;3 封顶为 3）。
+     * 加载子树节点（depth 缺省 3；国家级树 depth&gt;4 封顶为 4）。
      *
      * @param countryCode 国家 ISO2
      * @param rootId      根节点，可空（空=国家级）
@@ -155,13 +155,19 @@ public class GeoDataCache {
         if (depthRaw < 1 || depthRaw > 5) {
             throw new BizException(ErrorCode.PARAM_INVALID);
         }
-        // 未指定 rootId 时按国家级树处理，depth>3 直接封顶，避免错误缓存键
+        // 未指定 rootId 时按国家级树处理，depth>4 直接封顶，避免错误缓存键
         boolean countryRoot = rootId == null || rootId <= 0;
-        final int effectiveDepth = (countryRoot && depthRaw > 3) ? 3 : depthRaw;
+        final int effectiveDepth = (countryRoot && depthRaw > 4) ? 4 : depthRaw;
         String key = GeoCacheKeys.tree(code, rootId, effectiveDepth);
         TreeLoadResult result = tieredCache.get(key, TREE_RESULT, cacheProperties.treeTtl(), () -> {
             log.info("L3 load tree nodes, countryCode={}, rootId={}, depth={}", code, rootId, effectiveDepth);
             GeoRegion root;
+            /*
+             * 1) 定树根：
+             * - 传了 rootId：按 ID 取启用节点，且必须属于本次 countryCode（防跨国串树 / 越权拼参）
+             * - 未传 rootId：按 ISO2 找 level=1 的国家节点作为根
+             * miss 写负缓存，避免错误 ID/错误国家码反复打 DB
+             */
             if (!countryRoot) {
                 root = geoRegionMapper.findEnabledById(rootId);
                 if (root == null || !code.equalsIgnoreCase(root.getCountryCode())) {
@@ -175,12 +181,29 @@ public class GeoDataCache {
                     throw new BizException(ErrorCode.COUNTRY_NOT_FOUND);
                 }
             }
+            /*
+             * 2) 深度封顶（双保险）：
+             * 入口已对「无 rootId 的国家级请求」把 effectiveDepth 压到 ≤4；
+             * 这里再拦一层：即便调用方带了 rootId 但该节点实际仍是 level=1（国家），
+             * depth=5 会一次拉到 L5 街镇，数据量过大，故国家级强制 ≤4（国→…→区县）。
+             * 省/市节点下钻仍可用 depth=5。
+             */
             int depthUse = effectiveDepth;
-            if (root.getLevel() != null && root.getLevel() == 1 && depthUse > 3) {
-                depthUse = 3;
+            if (root.getLevel() != null && root.getLevel() == 1 && depthUse >= 4) {
+                depthUse = 4;
             }
+            // 根节点顺便暖 region 缓存，后续 path/children 可少打一次库
             tieredCache.put(GeoCacheKeys.region(root.getId()), root, cacheProperties.regionTtl());
+            /*
+             * 3) 用「最大 level」表达深度，而不是递归 N 次：
+             * depth=1 → 只要根；depth=4 且根为 L1 → maxLevel=4（国+省+市+区县）
+             * SQL：path LIKE '根path%' AND level<=maxLevel，一次查出扁平列表再在内存组树
+             */
             int maxLevel = root.getLevel() + depthUse - 1;
+            /*
+             * 4) 行数硬顶：LIMIT=maxRows 时「刚好拉满」视为可能截断，拒绝返回半棵树，
+             * 逼调用方缩小 depth 或改用更小的 rootId 级联，避免 OOM / 超大 JSON。
+             */
             int maxRows = cacheProperties.getTreeMaxRows();
             List<GeoRegion> nodes = geoRegionMapper.listSubtree(root.getPath(), maxLevel, maxRows);
             if (nodes != null && nodes.size() >= maxRows) {

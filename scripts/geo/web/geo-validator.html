@@ -13,30 +13,30 @@ header h1{font-size:15px;font-weight:600;color:#f0f6fc;white-space:nowrap}
 
 /* 三列布局 */
 .col{display:flex;flex-direction:column;overflow:hidden;border-right:1px solid #30363d}
-.col-cascade{width:240px;min-width:240px;background:#0d1117}
-.col-tree{width:320px;min-width:280px;background:#0d1117}
-.col-json{flex:1;background:#161b22}
+.col-cascade{width:30%;min-width:200px;background:#0d1117}
+.col-tree{width:30%;min-width:260px;background:#0d1117}
+.col-json{width:40%;flex:none;min-width:300px;background:#161b22}
 
 .col-header{padding:6px 10px;font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #30363d;flex-shrink:0}
 .col-body{flex:1;overflow-y:auto}
 
 /* Cascade selectors */
 .cascade-select{padding:4px 8px}
-.cascade-select label{display:block;font-size:10px;color:#8b949e;margin:4px 0 2px;text-transform:uppercase;letter-spacing:.3px}
-.cascade-select select{width:100%;padding:5px 6px;background:#21262d;border:1px solid #30363d;border-radius:3px;color:#c9d1d9;font-size:11px;outline:none;cursor:pointer}
+.cascade-select label{display:block;font-size:11px;color:#8b949e;margin:5px 0 3px;text-transform:uppercase;letter-spacing:.3px}
+.cascade-select select{width:100%;padding:6px 8px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;font-size:13px;outline:none;cursor:pointer}
 .cascade-select select:focus{border-color:#58a6ff}
 .cascade-select select:disabled{opacity:.4;cursor:not-allowed}
 
 /* Tree */
-.tree-row{display:flex;align-items:center;gap:3px;padding:2px 4px;border-radius:3px;cursor:pointer}
+.tree-row{display:flex;align-items:center;gap:4px;padding:4px 6px;border-radius:4px;cursor:pointer}
 .tree-row:hover{background:#1f2d3d}
-.tree-row .toggle{width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-size:8px;color:#8b949e;cursor:pointer;flex-shrink:0;user-select:none;border-radius:2px}
+.tree-row .toggle{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;font-size:16px;color:#8b949e;cursor:pointer;flex-shrink:0;user-select:none;border-radius:3px}
 .tree-row .toggle:hover{background:#30363d;color:#f0f6fc}
 .tree-row .toggle.leaf{visibility:hidden}
-.tree-row .node-name{color:#f0f6fc;font-size:12px}
-.tree-row .node-tag{font-size:8px;padding:1px 4px;border-radius:6px;margin-left:3px}
-.tree-row .node-count{font-size:9px;color:#8b949e;margin-left:3px}
-.tree-children{margin-left:16px;border-left:1px solid #30363d;padding-left:3px}
+.tree-row .node-name{color:#f0f6fc;font-size:14px}
+.tree-row .node-tag{font-size:10px;padding:2px 6px;border-radius:8px;margin-left:4px}
+.tree-row .node-count{font-size:11px;color:#8b949e;margin-left:4px}
+.tree-children{margin-left:20px;border-left:1px solid #30363d;padding-left:4px}
 .tree-children.collapsed{display:none}
 .tree-node.highlight>.tree-row{background:#1a3a5c}
 
@@ -80,16 +80,27 @@ header h1{font-size:15px;font-weight:600;color:#f0f6fc;white-space:nowrap}
   <!-- Column 1: Cascading -->
   <div class="col col-cascade">
     <div class="col-header">⬇ 逐级选择</div>
+    <div class="search-bar">
+      <input id="cascadeSearch" placeholder="关键词搜索区划..." onkeydown="if(event.key==='Enter')cascadeSearch()">
+      <button onclick="cascadeSearch()">搜</button>
+    </div>
+    <div class="search-res" id="cascadeSearchRes"></div>
     <div class="col-body" id="cascadeBody"></div>
   </div>
   <!-- Column 2: Tree -->
   <div class="col col-tree">
-    <div class="col-header">🌳 树状展开</div>
-    <div class="search-bar">
-      <input id="searchInput" placeholder="搜索..." onkeydown="if(event.key==='Enter')doSearch()">
-      <button onclick="doSearch()">搜</button>
+    <div class="col-header" style="display:flex;align-items:center;gap:4px;padding:4px 8px">
+      <span>🌳 树状展开</span>
+      <span style="flex:1"></span>
+      <select id="depthSelect" onchange="refreshTree()" style="padding:2px 4px;background:#21262d;border:1px solid #30363d;border-radius:3px;color:#c9d1d9;font-size:10px;outline:none">
+        <option value="2">2级</option><option value="3">3级</option><option value="4" selected>4级</option><option value="5">5级</option>
+      </select>
+      <button onclick="refreshTree()" style="padding:2px 6px;background:#21262d;border:1px solid #30363d;border-radius:3px;color:#c9d1d9;font-size:10px;cursor:pointer" title="刷新树">🔄</button>
     </div>
-    <div class="search-res" id="searchRes"></div>
+    <div class="search-bar">
+      <input id="treeFilterInput" placeholder="过滤树节点..." oninput="filterTree()" onkeydown="if(event.key==='Escape'){this.value='';filterTree()}">
+      <button onclick="document.getElementById('treeFilterInput').value='';filterTree()" title="清除过滤">✕</button>
+    </div>
     <div class="col-body" id="treeBody"><div class="loading">选中国家</div></div>
   </div>
   <!-- Column 3: JSON -->
@@ -182,14 +193,19 @@ async function onCascade(level){
 }
 
 // ===== Tree =====
-async function onCountryChange(iso2){
+let lastCountryIso = '';
+
+async function onCountryChange(iso2,rootId){
+  lastCountryIso=iso2;
   const tree=document.getElementById('treeBody');
   tree.innerHTML='<div class="loading">🌳 加载中...</div>';
   try{
-    const data=await af('/api/geo/v1/regions/tree?countryCode='+iso2+'&depth=5');
+    const depth=document.getElementById('depthSelect').value;
+    const data=await af('/api/geo/v1/regions/tree?countryCode='+iso2+'&depth='+depth+(rootId?'&rootId='+rootId:''));
     tree.innerHTML='';tree.appendChild(buildNode(data,0));
   }catch(e){tree.innerHTML='<div class="loading" style="color:#f85149">❌ '+e.message+'</div>';}
 }
+function refreshTree(){}
 
 function buildNode(node,level){
   const w=document.createElement('div');w.className='tree-node';w.dataset.id=node.id;w.dataset.level=node.level||level;
@@ -250,20 +266,42 @@ function switchTab(tab){
   }
 }
 
-// ===== Search =====
-async function doSearch(){
-  const inp=document.getElementById('searchInput');const kw=inp.value.trim();if(!kw)return;
-  const rd=document.getElementById('searchRes');rd.style.display='block';rd.innerHTML='<div class="sr">搜索中...</div>';
+// ===== Search (column 1: API search) =====
+async function cascadeSearch(){
+  const inp=document.getElementById('cascadeSearch');const kw=inp.value.trim();if(!kw)return;
+  // 获取当前选中的国家 ISO2
+  const sel=document.getElementById('sel-0');const countryId=parseInt(sel.value);
+  const cc=countryMeta[countryId]?.iso2||'';
+  const rd=document.getElementById('cascadeSearchRes');rd.style.display='block';rd.innerHTML='<div class="sr">搜索中...</div>';
   try{
-    const d=await af('/api/geo/v1/regions/search?keyword='+encodeURIComponent(kw)+'&limit=20');
-    showJson(d,'GET /api/geo/v1/regions/search?keyword='+encodeURIComponent(kw));
+    const d=await af('/api/geo/v1/regions/search?keyword='+encodeURIComponent(kw)+'&countryCode='+cc+'&limit=30');
+    showJson(d,'GET /api/geo/v1/regions/search?keyword='+encodeURIComponent(kw)+'&countryCode='+cc);
+    showMeta('🔍 "'+kw+'" → '+d.length+' 条');
     if(!d.length){rd.innerHTML='<div class="sr" style="color:#8b949e">无结果</div>';return;}
-    rd.innerHTML='';d.slice(0,30).forEach(r=>{
+    rd.innerHTML='';d.slice(0,50).forEach(r=>{
       const div=document.createElement('div');div.className='sr';
       div.innerHTML='<span>'+(r.displayName||r.nameCh||r.name||r.nameEn)+'</span> <span style="color:#8b949e">'+(r.fullPathName||r.regionType||'')+'</span>';
       rd.appendChild(div);
     });
   }catch(e){rd.innerHTML='<div class="sr" style="color:#f85149">'+e.message+'</div>';}
+}
+
+// ===== Tree filter (column 2: client-side) =====
+function filterTree(){
+  const kw=document.getElementById('treeFilterInput').value.trim().toLowerCase();
+  document.querySelectorAll('#treeBody .tree-node').forEach(el=>{
+    const name=el.querySelector('.node-name')?.textContent?.toLowerCase()||'';
+    const match=!kw||name.includes(kw);
+    el.style.display=match?'':'none';
+  });
+}
+
+function refreshTree(){
+  if(lastCountryIso){
+    const depth=document.getElementById('depthSelect').value;
+    showMeta('🔄 刷新树 depth='+depth+'...',false);
+    onCountryChange(lastCountryIso);
+  }
 }
 
 function onLangChange(){init();}
@@ -275,7 +313,7 @@ onCascade=function(level){
   origOnCascade(level);
   if(level===0){
     const sel=document.getElementById('sel-0');const v=sel.value;
-    if(v){const m=countryMeta[parseInt(v)];if(m)onCountryChange(m.iso2);}
+    if(v){const m=countryMeta[parseInt(v)];if(m)onCountryChange(m.iso2,parseInt(v));}
   }
 };
 </script>

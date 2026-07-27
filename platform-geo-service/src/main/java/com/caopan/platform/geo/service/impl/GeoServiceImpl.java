@@ -162,9 +162,7 @@ public class GeoServiceImpl implements GeoService {
             map.put(r.getId(), r);
         }
         GeoRegion current = map.get(id);
-        if (current == null && !regions.isEmpty()) {
-            current = regions.get(regions.size() - 1);
-        }
+        // 祖先链必须包含当前节点；缺失则直接失败，禁止回退到列表末元素（可能是祖先）
         if (current == null) {
             throw new BizException(ErrorCode.REGION_NOT_FOUND);
         }
