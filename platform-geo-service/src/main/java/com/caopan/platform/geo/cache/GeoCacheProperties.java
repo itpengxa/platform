@@ -36,8 +36,16 @@ public class GeoCacheProperties {
     private long jitterSeconds = 300L;
     /** 负缓存（DB miss）TTL 秒，防穿透 */
     private long negativeTtlSeconds = 30L;
-    /** 树查询最大行数，超出直接拒绝，防大包 OOM */
+    /**
+     * 树查询最大行数，超出直接拒绝，防大包 OOM。
+     * 联调/灌库验证可临时调大（如 50000）。
+     */
     private int treeMaxRows = 3000;
+    /**
+     * 国家级根（level=1 / 未传 rootId）允许的最大 depth（1~5）。
+     * 请求 depth 超过该值时封顶；省/市等非国家级根不受此限制。
+     */
+    private int treeCountryMaxDepth = 3;
 
     /**
      * @return L1 过期时间
@@ -192,5 +200,19 @@ public class GeoCacheProperties {
 
     public void setTreeMaxRows(int treeMaxRows) {
         this.treeMaxRows = treeMaxRows;
+    }
+
+    /**
+     * @return 国家级树最大 depth，钳制在 1~5；非法配置回退 4
+     */
+    public int getTreeCountryMaxDepth() {
+        if (treeCountryMaxDepth < 1 || treeCountryMaxDepth > 5) {
+            return 4;
+        }
+        return treeCountryMaxDepth;
+    }
+
+    public void setTreeCountryMaxDepth(int treeCountryMaxDepth) {
+        this.treeCountryMaxDepth = treeCountryMaxDepth;
     }
 }

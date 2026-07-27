@@ -50,6 +50,7 @@ class GeoDataCacheTest {
         GeoCacheProperties props = new GeoCacheProperties();
         props.setJitterSeconds(0);
         props.setTreeMaxRows(100);
+        props.setTreeCountryMaxDepth(4);
         geoDataCache = new GeoDataCache(geoCountryMapper, geoRegionMapper, tieredCache, props);
     }
 

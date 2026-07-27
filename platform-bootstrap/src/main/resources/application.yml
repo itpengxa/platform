@@ -48,8 +48,11 @@ platform:
       jitter-seconds: 300
       # miss 负缓存 TTL（秒），防穿透
       negative-ttl-seconds: 30
-      # 树查询最大行数硬限制
+      # 树查询最大行数：命中上限视为可能截断，拒绝返回（联调可临时调大）
       tree-max-rows: 3000
+      # 国家级根（未传 rootId / level=1）允许的最大 depth（1~5）；请求更大时封顶
+      # 例：4=国→省→市→区；5=可到街镇（数据量大，配合 tree-max-rows）
+      tree-country-max-depth: 4
     rate-limit:
       # 独立开关：false 则完全跳过 IP 限流
       enabled: true
