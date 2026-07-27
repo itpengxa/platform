@@ -64,8 +64,13 @@ platform:
     auth:
       # 独立开关：false 则跳过 Token 校验（online/prod 启动门禁禁止关闭）
       enabled: true
-      # Token 解析本地缓存 TTL（秒）
-      token-cache-ttl-seconds: 60
+      # Redis：Issue 分布式锁 + valid:{hash}（依赖 cache.redis-enabled 与 Redis 可用）
+      redis-token-sync-enabled: true
+      issue-lock-key-prefix: "platform:auth:issue-lock:"
+      valid-key-prefix: "platform:auth:valid:"
+      issue-lock-seconds: 30
+      issue-lock-retry-times: 8
+      issue-lock-retry-ms: 50
     access-log:
       args-enabled: true
       exception-enabled: true

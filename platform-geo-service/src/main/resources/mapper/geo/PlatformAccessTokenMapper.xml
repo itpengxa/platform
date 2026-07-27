@@ -9,6 +9,12 @@
         WHERE client_id = #{clientId} AND status = 1
     </update>
 
+    <select id="listActiveTokenHashesByClientId" resultType="java.lang.String">
+        SELECT token_hash
+        FROM platform_access_token
+        WHERE client_id = #{clientId} AND status = 1
+    </select>
+
     <select id="findActiveByHash" resultType="com.caopan.platform.geo.entity.PlatformAccessToken">
         SELECT t.id, t.client_id, t.token_hash, t.token_prefix, t.status, t.created_at, t.updated_at
         FROM platform_access_token t

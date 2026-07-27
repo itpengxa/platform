@@ -45,9 +45,9 @@ platform:
       search-interval-ms: 100
       tree-interval-ms: 200
     auth:
-      # 独立开关：本地默认关；联调 DB Token 时改为 true
-      enabled: false
-      token-cache-ttl-seconds: 60
+      enabled: true
+      redis-token-sync-enabled: true
+      issue-lock-seconds: 30
     access-log:
       args-enabled: true
       exception-enabled: true

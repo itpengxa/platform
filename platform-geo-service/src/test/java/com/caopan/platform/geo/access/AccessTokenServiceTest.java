@@ -13,6 +13,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.data.redis.core.StringRedisTemplate;
+
+import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -30,17 +34,31 @@ class AccessTokenServiceTest {
     private PlatformAccessClientMapper clientMapper;
     @Mock
     private PlatformAccessTokenMapper tokenMapper;
+    @Mock
+    private ObjectProvider<StringRedisTemplate> redisProvider;
 
     private AccessTokenService service;
 
     @BeforeEach
     void setUp() {
-        service = new AccessTokenService(clientMapper, tokenMapper, 60);
+        when(redisProvider.getIfAvailable()).thenReturn(null);
+        service = new AccessTokenService(
+                clientMapper,
+                tokenMapper,
+                redisProvider,
+                false,
+                true,
+                "platform:auth:issue-lock:",
+                "platform:auth:valid:",
+                30,
+                8,
+                50);
     }
 
     @Test
     void issue_createsClientAndToken() {
         when(clientMapper.findByCode("crm")).thenReturn(null);
+        when(tokenMapper.listActiveTokenHashesByClientId(any())).thenReturn(Collections.emptyList());
         doAnswer(inv -> {
             PlatformAccessClient c = inv.getArgument(0);
             c.setId(10L);

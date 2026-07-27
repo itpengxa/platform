@@ -6,6 +6,8 @@ import com.caopan.platform.geo.entity.PlatformAccessToken;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.List;
+
 /**
  * 访问令牌 Mapper（GEO-001 / platform-geo-service）。
  * <p>负责吊销、按 hash 解析有效 Token（联表校验 client 启用状态）。</p>
@@ -20,6 +22,11 @@ public interface PlatformAccessTokenMapper extends BaseMapper<PlatformAccessToke
      * @return 更新行数
      */
     int revokeActiveByClientId(@Param("clientId") Long clientId);
+
+    /**
+     * 吊销前查询仍有效的 token_hash（用于 Redis valid 清理）。
+     */
+    List<String> listActiveTokenHashesByClientId(@Param("clientId") Long clientId);
 
     /**
      * 按 token_hash 查询仍有效且所属 client 启用的 Token 行。

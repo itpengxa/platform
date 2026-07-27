@@ -165,7 +165,8 @@ java -jar platform-bootstrap/target/platform-bootstrap-*.jar --spring.profiles.a
 | `rate-limit.trust-forwarded-headers` | 是否信 XFF | 仅可信网关后开 |
 | `rate-limit.fail-closed` | Redis 宕是否拒绝 | online=true |
 | `auth.enabled` | **鉴权独立开关** | online 必 true |
-| `auth.token-cache-ttl-seconds` | Token 解析缓存 | 默认 60 |
+| `auth.redis-token-sync-enabled` | Issue 锁 + Redis `valid:{hash}` | 默认 true，需 Redis |
+| `auth.issue-lock-seconds` | Issue 分布式锁 TTL | 默认 30 |
 | `access-log.stat-enabled` | 调用统计落库 | 默认 true |
 ---
 

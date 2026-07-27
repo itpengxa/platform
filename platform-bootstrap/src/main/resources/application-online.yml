@@ -48,7 +48,8 @@ platform:
       tree-interval-ms: 2000
     auth:
       enabled: true
-      token-cache-ttl-seconds: 60
+      redis-token-sync-enabled: true
+      issue-lock-seconds: 30
     access-log:
       args-enabled: true
       exception-enabled: true
