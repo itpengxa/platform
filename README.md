@@ -24,7 +24,7 @@
 - 关键词前缀搜索（**强制国家维度**，禁止 `%`/`_`）
 - 多语言展示名：`lang=local|en|zh`（缓存 Key 不含 lang，Service 层计算 `displayName`）
 - 三级缓存：Caffeine → Redis → DB（singleflight + TTL 抖动 + 负缓存）
-- IP 限流 + 可选内部 Token 鉴权（online 强制）
+- IP 限流 + DB Token 鉴权（yml 独立开关；online 强制开鉴权）
 
 ---
 
@@ -48,7 +48,7 @@ platform/                          # 父 POM
 ├── platform-api/                  # 契约：VO + GeoService 接口（JDK 8）
 ├── platform-common/               # Result / ErrorCode / BizException / LangUtil / i18n
 ├── platform-geo-service/          # 实现 + Entity + Mapper + 三级缓存（无 Controller）
-├── platform-geo-web/              # 仅 GeoController
+├── platform-geo-web/              # GeoController + TokenIssueController
 ├── platform-geo-client/           # 可选 HTTP SDK（JDK 8）
 ├── platform-web-ui/               # 静态/占位（非本需求核心）
 ├── platform-bootstrap/            # 启动入口、Filter、配置、可执行 JAR
@@ -85,12 +85,12 @@ platform-geo-client → platform-api
 ### 4.1 调用链
 
 ```
-Client → GeoIpRateLimitFilter → GeoInternalAuthFilter → GeoController
+Client → GeoIpRateLimitFilter → GeoAccessAspect(DB Token) → GeoController
        → GeoServiceImpl → GeoDataCache → TieredCache (L1/L2) → Mapper (L3/DB)
 ```
 
 - **限流在鉴权之前**（错误 Token 也会被限流，避免 401 洪水）
-- Filter Order：限流 `HIGHEST+10`，鉴权 `HIGHEST+20`
+- 限流 Filter：`HIGHEST+10`；鉴权在 Controller 切面；鉴权/限流均有 **yml 独立开关**
 
 ### 4.2 三级缓存
 
@@ -130,7 +130,7 @@ DDL 见 `sql/schema.sql`；交付灌库 SQL 见文档目录 `交付/配置/`。
 | Profile | 用途 | 鉴权 | 限流 fail-closed | 说明 |
 |---------|------|------|------------------|------|
 | `test`（默认） | 本地联调 | 默认关 | 否 | 可打 DEBUG SQL |
-| `online` | 预发/生产 | **开**，Token 必填 ≥16 | **是** | Mapper 关闭 DEBUG |
+| `online` | 预发/生产 | **开**（DB Token） | **是** | Mapper 关闭 DEBUG |
 | `prod` | 兼容旧名 | 同 online | 同 online | `spring.profiles.group.prod: online` |
 | `dev` | 薄配置/兼容 | — | — | 建议迁移到 `test` |
 
@@ -140,13 +140,15 @@ DDL 见 `sql/schema.sql`；交付灌库 SQL 见文档目录 `交付/配置/`。
 # 本地 test
 mvn -pl platform-bootstrap -am spring-boot:run
 
-# 生产/预发
-export GEO_INTERNAL_TOKEN='至少16位的随机口令'
+# 生产/预发（先执行 sql/platform_access.sql 或全量 schema）
 export MYSQL_URL='jdbc:mysql://...'
 export MYSQL_USER=...
 export MYSQL_PASSWORD=...
 export REDIS_HOST=...
 java -jar platform-bootstrap/target/platform-bootstrap-*.jar --spring.profiles.active=online
+# 签发 Token（无需鉴权）：
+# curl -s -X POST http://host:8088/api/platform/v1/auth/token/issue \
+#   -H 'Content-Type: application/json' -d '{"clientCode":"crm"}'
 ```
 
 常用配置键（`platform.geo.*`）：
@@ -157,13 +159,14 @@ java -jar platform-bootstrap/target/platform-bootstrap-*.jar --spring.profiles.a
 | `cache.jitter-seconds` | TTL 抖动上限 | online 可加大（如 600） |
 | `cache.negative-ttl-seconds` | 负缓存 TTL | 默认 30 |
 | `cache.tree-max-rows` | 树查询最大行数 | 默认 3000 |
-| `rate-limit.enabled` | IP 限流开关 | true |
+| `rate-limit.enabled` | **限流独立开关** | true / false |
 | `rate-limit.default-interval-ms` | 普通接口间隔 | 1000 |
 | `rate-limit.tree-interval-ms` | tree 间隔 | 2000 |
 | `rate-limit.trust-forwarded-headers` | 是否信 XFF | 仅可信网关后开 |
 | `rate-limit.fail-closed` | Redis 宕是否拒绝 | online=true |
-| `auth.enabled` / `auth.token` | 内部 Token | online 必开；环境变量 `GEO_INTERNAL_TOKEN` |
-
+| `auth.enabled` | **鉴权独立开关** | online 必 true |
+| `auth.token-cache-ttl-seconds` | Token 解析缓存 | 默认 60 |
+| `access-log.stat-enabled` | 调用统计落库 | 默认 true |
 ---
 
 ## 6. 快速开始
@@ -192,10 +195,13 @@ curl -s 'http://127.0.0.1:8088/api/geo/v1/regions/children?parentId=240&lang=zh'
 curl -s 'http://127.0.0.1:8088/api/geo/v1/regions/tree?countryCode=VN&depth=3&lang=zh' | head
 ```
 
-online 需带头：
+online 需先签发再带头：
 
 ```bash
-curl -s -H "X-Platform-Token: $GEO_INTERNAL_TOKEN" \
+TOKEN=$(curl -s -X POST 'http://127.0.0.1:8088/api/platform/v1/auth/token/issue' \
+  -H 'Content-Type: application/json' -d '{"clientCode":"crm","clientName":"CRM"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['token'])")
+curl -s -H "X-Platform-Token: $TOKEN" \
   'http://127.0.0.1:8088/api/geo/v1/countries?lang=zh'
 # 或 Authorization: Bearer <token>
 ```
@@ -209,6 +215,7 @@ curl -s -H "X-Platform-Token: $GEO_INTERNAL_TOKEN" \
 
 | 方法 | 路径 | 主要参数 | 说明 |
 |------|------|----------|------|
+| POST | `/api/platform/v1/auth/token/issue` | `clientCode`*, `clientName` | **无需鉴权**签发长效 Token；再调即换新并吊销旧值 |
 | GET | `/api/geo/v1/countries` | `lang`, `keyword` | 国家列表；keyword 禁 `%`/`_` |
 | GET | `/api/geo/v1/regions/children` | `parentId`*, `lang` | 直属子级；父不存在 → 40001 |
 | GET | `/api/geo/v1/regions/tree` | `countryCode`*, `rootId`, `depth`, `lang` | depth 默认 3，范围 1~5；国家级 depth>4 封顶 4；超 `tree-max-rows` 拒绝 |
@@ -217,9 +224,9 @@ curl -s -H "X-Platform-Token: $GEO_INTERNAL_TOKEN" \
 
 \* 必填。`lang`：`local`（默认）/ `en` / `zh`。
 
-**限流：** 同 IP 默认接口约 1 qps，tree 约 0.5 qps（可配）；超限 HTTP **429**。  
-**鉴权：** online 开启后需 `X-Platform-Token` 或 `Authorization: Bearer`；失败 **401**。
-
+**限流：** `platform.geo.rate-limit.enabled` 独立开关；同 IP 默认约 1 qps，tree 约 0.5 qps；超限 HTTP **429**。  
+**鉴权：** `platform.geo.auth.enabled` 独立开关；开启后 geo 接口需 DB Token（`X-Platform-Token` / Bearer）；失败 **401**。  
+**统计：** 切面异步写入 `platform_api_access_stat`（应用/时间/接口/参数/成败）。
 ---
 
 ## 8. 单元测试
@@ -233,9 +240,9 @@ mvn test
 | 模块 | 覆盖重点 |
 |------|----------|
 | `platform-common` | `LangUtil`、`Result`、`ErrorMessages` |
-| `platform-geo-service` | `PathUtil`、`GeoCacheKeys`、`TieredCache`、`GeoDataCache`、`GeoServiceImpl` |
-| `platform-geo-web` | `GeoController`（纯 Mockito，不启容器） |
-| `platform-bootstrap` | IP 限流 / Token 鉴权 Filter、启动门禁 |
+| `platform-geo-service` | `PathUtil`、`GeoCacheKeys`、`TieredCache`、`GeoDataCache`、`GeoServiceImpl`、`AccessTokenService` |
+| `platform-geo-web` | `GeoController`、`TokenIssueController`（纯 Mockito，不启容器） |
+| `platform-bootstrap` | IP 限流 Filter、GeoAccessAspect、启动门禁 |
 
 风格：`@ExtendWith(MockitoExtension.class)` + `@Mock` / `@InjectMocks`。
 

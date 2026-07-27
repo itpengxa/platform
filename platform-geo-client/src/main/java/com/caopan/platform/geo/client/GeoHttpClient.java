@@ -26,25 +26,40 @@ import java.util.List;
  */
 public class GeoHttpClient implements GeoService {
 
+    private static final String HEADER_TOKEN = "X-Platform-Token";
+
     private final String baseUrl;
     private final ObjectMapper objectMapper;
+    /** online 鉴权 Token；空则不发送（仅 test/内网） */
+    private final String authToken;
 
     /**
-     * 使用默认 ObjectMapper 构造。
+     * 使用默认 ObjectMapper 构造（不带鉴权头）。
      *
      * @param baseUrl 服务根地址，如 {@code http://localhost:8080}（勿带尾斜杠亦可）
      */
     public GeoHttpClient(String baseUrl) {
-        this(baseUrl, new ObjectMapper());
+        this(baseUrl, new ObjectMapper(), null);
     }
 
     /**
-     * 注入依赖构造。
+     * 注入依赖构造（不带鉴权头）。
      *
      * @param baseUrl      服务根地址
      * @param objectMapper JSON 解析器
      */
     public GeoHttpClient(String baseUrl, ObjectMapper objectMapper) {
+        this(baseUrl, objectMapper, null);
+    }
+
+    /**
+     * 带内部 Token 构造（对接 online：{@code X-Platform-Token} / Bearer）。
+     *
+     * @param baseUrl      服务根地址
+     * @param objectMapper JSON 解析器
+     * @param authToken    内部 Token，可空
+     */
+    public GeoHttpClient(String baseUrl, ObjectMapper objectMapper, String authToken) {
         if (baseUrl == null || baseUrl.trim().isEmpty()) {
             throw new IllegalArgumentException("baseUrl required");
         }
@@ -53,7 +68,18 @@ public class GeoHttpClient implements GeoService {
             trimmed = trimmed.substring(0, trimmed.length() - 1);
         }
         this.baseUrl = trimmed;
-        this.objectMapper = objectMapper;
+        this.objectMapper = objectMapper == null ? new ObjectMapper() : objectMapper;
+        this.authToken = authToken == null ? null : authToken.trim();
+    }
+
+    /**
+     * 便捷构造：baseUrl + Token。
+     *
+     * @param baseUrl   服务根地址
+     * @param authToken 内部 Token
+     */
+    public GeoHttpClient(String baseUrl, String authToken) {
+        this(baseUrl, new ObjectMapper(), authToken);
     }
 
     /**
@@ -164,6 +190,10 @@ public class GeoHttpClient implements GeoService {
             conn.setConnectTimeout(5000);
             conn.setReadTimeout(15000);
             conn.setRequestProperty("Accept", "application/json");
+            if (authToken != null && !authToken.isEmpty()) {
+                conn.setRequestProperty(HEADER_TOKEN, authToken);
+                conn.setRequestProperty("Authorization", "Bearer " + authToken);
+            }
             int status = conn.getResponseCode();
             InputStream stream = status >= 400 ? conn.getErrorStream() : conn.getInputStream();
             if (stream == null) {

@@ -4,22 +4,21 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.support.ReloadableResourceBundleMessageSource;
 import org.springframework.web.servlet.LocaleResolver;
-import org.springframework.web.servlet.i18n.AcceptHeaderLocaleResolver;
+import org.springframework.web.servlet.i18n.FixedLocaleResolver;
 
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Locale;
 
 /**
- * 国际化配置（platform-bootstrap，W10）。
- * <p>装配 MessageSource（classpath:messages）与 Accept-Language LocaleResolver，
- * 供错误文案中/英切换；缺省简体中文。与请求参数 lang 配合见 GlobalExceptionHandler。</p>
+ * 文案配置（platform-bootstrap）。
+ * <p>当前仅英文：固定 {@link Locale#ENGLISH}，单一 {@code messages.properties}。
+ * 区划展示名仍由请求参数 {@code lang}（local/en/zh）控制，与错误文案无关。</p>
  */
 @Configuration
 public class I18nConfig {
 
     /**
-     * @return 可热加载的 MessageSource
+     * @return 可热加载的 MessageSource（英文）
      */
     @Bean
     public ReloadableResourceBundleMessageSource messageSource() {
@@ -27,18 +26,17 @@ public class I18nConfig {
         source.setBasename("classpath:messages");
         source.setDefaultEncoding(StandardCharsets.UTF_8.name());
         source.setFallbackToSystemLocale(false);
-        source.setDefaultLocale(Locale.SIMPLIFIED_CHINESE);
+        source.setDefaultLocale(Locale.ENGLISH);
         return source;
     }
 
     /**
-     * @return 基于 Accept-Language 的 Locale 解析器
+     * 固定英文，不再按 Accept-Language / 中文切换。
+     *
+     * @return FixedLocaleResolver(ENGLISH)
      */
     @Bean
     public LocaleResolver localeResolver() {
-        AcceptHeaderLocaleResolver resolver = new AcceptHeaderLocaleResolver();
-        resolver.setDefaultLocale(Locale.SIMPLIFIED_CHINESE);
-        resolver.setSupportedLocales(List.of(Locale.SIMPLIFIED_CHINESE, Locale.ENGLISH));
-        return resolver;
+        return new FixedLocaleResolver(Locale.ENGLISH);
     }
 }

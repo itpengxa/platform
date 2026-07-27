@@ -44,11 +44,16 @@ platform:
       trust-forwarded-headers: false
       fail-closed: true
       default-interval-ms: 1000
+      search-interval-ms: 1000
       tree-interval-ms: 2000
     auth:
       enabled: true
-      # 必须通过环境变量注入，长度建议 ≥16；空值将拒绝启动
-      token: ${GEO_INTERNAL_TOKEN:}
+      token-cache-ttl-seconds: 60
+    access-log:
+      args-enabled: true
+      exception-enabled: true
+      stat-enabled: true
+      params-max-length: 2048
 
 logging:
   level:

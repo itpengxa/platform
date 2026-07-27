@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caopan.platform.geo.mapper.PlatformAccessTokenMapper">
+
+    <update id="revokeActiveByClientId">
+        UPDATE platform_access_token
+        SET status = 0, updated_at = NOW()
+        WHERE client_id = #{clientId} AND status = 1
+    </update>
+
+    <select id="findActiveByHash" resultType="com.caopan.platform.geo.entity.PlatformAccessToken">
+        SELECT t.id, t.client_id, t.token_hash, t.token_prefix, t.status, t.created_at, t.updated_at
+        FROM platform_access_token t
+        INNER JOIN platform_access_client c ON c.id = t.client_id
+        WHERE t.token_hash = #{tokenHash}
+          AND t.status = 1
+          AND c.status = 1
+        LIMIT 1
+    </select>
+
+    <select id="findActiveCallerByHash" resultType="com.caopan.platform.geo.access.TokenCallerRow">
+        SELECT t.id AS token_id, t.client_id AS client_id, c.client_code AS client_code
+        FROM platform_access_token t
+        INNER JOIN platform_access_client c ON c.id = t.client_id
+        WHERE t.token_hash = #{tokenHash}
+          AND t.status = 1
+          AND c.status = 1
+        LIMIT 1
+    </select>
+
+    <select id="findClientCodeByTokenId" resultType="java.lang.String">
+        SELECT c.client_code
+        FROM platform_access_token t
+        INNER JOIN platform_access_client c ON c.id = t.client_id
+        WHERE t.id = #{tokenId}
+        LIMIT 1
+    </select>
+</mapper>

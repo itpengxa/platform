@@ -284,6 +284,11 @@ public class GeoServiceImpl implements GeoService {
                 parent.getChildren().add(vo);
             }
         }
+        // isLeaf 与 listChildren 对齐：以本次树内是否挂子节点为准，不用 DB is_leaf 双路径
+        for (RegionTreeVO vo : map.values()) {
+            List<RegionTreeVO> children = vo.getChildren();
+            vo.setIsLeaf(children == null || children.isEmpty());
+        }
         return root;
     }
 
@@ -367,6 +372,7 @@ public class GeoServiceImpl implements GeoService {
         vo.setLevel(r.getLevel());
         vo.setRegionType(r.getRegionType());
         vo.setPath(r.getPath());
+        // path/search：用库内 is_leaf；listChildren/tree 在组装后按实际子节点覆盖，避免双路径语义分叉
         vo.setIsLeaf(r.getIsLeaf() != null && r.getIsLeaf() == 1);
     }
 

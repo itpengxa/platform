@@ -19,29 +19,23 @@ class GeoAuthStartupGuardTest {
 
     @Test
     void authDisabled_allowsStart() {
-        GeoAuthStartupGuard guard = new GeoAuthStartupGuard(environment, false, "");
+        when(environment.getActiveProfiles()).thenReturn(new String[]{"test"});
+        GeoAuthStartupGuard guard = new GeoAuthStartupGuard(environment, false);
         assertDoesNotThrow(() -> guard.run(new DefaultApplicationArguments()));
     }
 
     @Test
-    void authEnabled_emptyToken_rejects() {
-        GeoAuthStartupGuard guard = new GeoAuthStartupGuard(environment, true, "  ");
-        assertThrows(IllegalStateException.class,
-                () -> guard.run(new DefaultApplicationArguments()));
-    }
-
-    @Test
-    void authEnabled_shortToken_rejects() {
-        GeoAuthStartupGuard guard = new GeoAuthStartupGuard(environment, true, "short");
-        assertThrows(IllegalStateException.class,
-                () -> guard.run(new DefaultApplicationArguments()));
-    }
-
-    @Test
-    void authEnabled_validToken_allows() {
+    void authDisabled_onlineProfile_rejects() {
         when(environment.getActiveProfiles()).thenReturn(new String[]{"online"});
-        GeoAuthStartupGuard guard = new GeoAuthStartupGuard(
-                environment, true, "0123456789abcdef");
+        GeoAuthStartupGuard guard = new GeoAuthStartupGuard(environment, false);
+        assertThrows(IllegalStateException.class,
+                () -> guard.run(new DefaultApplicationArguments()));
+    }
+
+    @Test
+    void authEnabled_allowsWithoutStaticToken() {
+        when(environment.getActiveProfiles()).thenReturn(new String[]{"online"});
+        GeoAuthStartupGuard guard = new GeoAuthStartupGuard(environment, true);
         assertDoesNotThrow(() -> guard.run(new DefaultApplicationArguments()));
     }
 }

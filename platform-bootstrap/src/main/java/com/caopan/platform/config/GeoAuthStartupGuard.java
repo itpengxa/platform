@@ -7,13 +7,11 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
 
 /**
  * 鉴权启动门禁（GEO-001 / platform-bootstrap）。
- * <p>应用启动时检查：若开启 {@code platform.geo.auth.enabled}，则 Token 必须非空且长度足够，
- * 避免空口令误开放。online/prod profile 下开启鉴权时打确认日志；
- * test 可关闭鉴权仅用于内网联调。</p>
+ * <p>online/prod 禁止 {@code platform.geo.auth.enabled=false}。
+ * Token 已改为 DB 签发（{@code /api/platform/v1/auth/token/issue}），不再校验 yml 静态 token。</p>
  */
 @Component
 public class GeoAuthStartupGuard implements ApplicationRunner {
@@ -21,52 +19,50 @@ public class GeoAuthStartupGuard implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(GeoAuthStartupGuard.class);
 
     private final Environment environment;
+    /** 鉴权独立开关 */
     private final boolean authEnabled;
-    private final String authToken;
 
     /**
-     * 注入依赖构造。
-     *
      * @param environment 用于识别 active profiles（test/online/prod）
-     * @param authEnabled 是否启用内部鉴权
-     * @param authToken   配置的 Token
+     * @param authEnabled {@code platform.geo.auth.enabled}
      */
     public GeoAuthStartupGuard(
             Environment environment,
-            @Value("${platform.geo.auth.enabled:false}") boolean authEnabled,
-            @Value("${platform.geo.auth.token:}") String authToken) {
+            @Value("${platform.geo.auth.enabled:false}") boolean authEnabled) {
         this.environment = environment;
         this.authEnabled = authEnabled;
-        this.authToken = authToken == null ? "" : authToken.trim();
     }
 
     /**
-     * 启动后校验鉴权配置；Token 非法时抛 {@link IllegalStateException} 阻止启动。
+     * 启动后校验：online/prod 必须开启鉴权。
      *
      * @param args 启动参数
+     * @throws IllegalStateException online/prod 且 auth.enabled=false
      */
     @Override
     public void run(ApplicationArguments args) {
-        if (!authEnabled) {
-            log.warn("platform.geo.auth.enabled=false — geo API 未启用内部 Token（仅适用于内网 test）");
-            return;
-        }
-        if (!StringUtils.hasText(authToken)) {
-            throw new IllegalStateException(
-                    "platform.geo.auth.enabled=true 但 token 为空，请设置 GEO_INTERNAL_TOKEN / platform.geo.auth.token");
-        }
-        if (authToken.length() < 16) {
-            throw new IllegalStateException("platform.geo.auth.token 长度过短（建议 ≥16），拒绝启动");
-        }
         boolean onlineLike = false;
-        for (String p : environment.getActiveProfiles()) {
-            if ("online".equalsIgnoreCase(p) || "prod".equalsIgnoreCase(p)) {
-                onlineLike = true;
-                break;
+        String[] profiles = environment.getActiveProfiles();
+        if (profiles != null) {
+            for (String p : profiles) {
+                if ("online".equalsIgnoreCase(p) || "prod".equalsIgnoreCase(p)) {
+                    onlineLike = true;
+                    break;
+                }
             }
         }
+        if (!authEnabled) {
+            if (onlineLike) {
+                throw new IllegalStateException(
+                        "online/prod 环境禁止 platform.geo.auth.enabled=false，请开启鉴权并通过 /api/platform/v1/auth/token/issue 签发 Token");
+            }
+            log.warn("platform.geo.auth.enabled=false — geo API 未启用 Token 鉴权（仅适用于内网 test）");
+            return;
+        }
         if (onlineLike) {
-            log.info("geo internal auth enabled for online/prod profile");
+            log.info("geo DB token auth enabled for online/prod profile");
+        } else {
+            log.info("geo DB token auth enabled");
         }
     }
 }

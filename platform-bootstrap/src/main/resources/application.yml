@@ -6,6 +6,11 @@
 server:
   port: 8088
 
+# info / error 分文件，见 logback-spring.xml；可用环境变量 LOG_PATH 覆盖目录
+logging:
+  file:
+    path: ${LOG_PATH:./logs}
+
 spring:
   application:
     name: platform
@@ -46,14 +51,23 @@ platform:
       # 树查询最大行数硬限制
       tree-max-rows: 3000
     rate-limit:
+      # 独立开关：false 则完全跳过 IP 限流
       enabled: true
       # 默认不信任 XFF，防客户端伪造绕过限流；仅经可信网关时改为 true
       trust-forwarded-headers: false
       # Redis 不可用时是否拒绝（多实例建议 online 开启）
       fail-closed: false
       default-interval-ms: 1000
+      # 搜索直打 DB，独立桶按 IP 1qps
+      search-interval-ms: 1000
       tree-interval-ms: 2000
     auth:
-      # online 建议 true；test 默认 false
-      enabled: false
-      token: ""
+      # 独立开关：false 则跳过 Token 校验（online/prod 启动门禁禁止关闭）
+      enabled: true
+      # Token 解析本地缓存 TTL（秒）
+      token-cache-ttl-seconds: 60
+    access-log:
+      args-enabled: true
+      exception-enabled: true
+      stat-enabled: true
+      params-max-length: 2048

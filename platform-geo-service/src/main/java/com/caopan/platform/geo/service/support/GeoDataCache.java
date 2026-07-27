@@ -209,12 +209,19 @@ public class GeoDataCache {
             if (nodes != null && nodes.size() >= maxRows) {
                 log.warn("tree result hit maxRows={}, countryCode={}, rootId={}, depth={}",
                         maxRows, code, rootId, depthUse);
+                // 短 TTL 缓存 oversized 标记，避免反复打重 SQL；错误码仍由外层抛 PARAM_INVALID
+                TreeLoadResult oversized = new TreeLoadResult(root, Collections.emptyList());
+                oversized.setOversized(true);
+                tieredCache.put(key, oversized, cacheProperties.negativeTtl());
                 throw new BizException(ErrorCode.PARAM_INVALID);
             }
             return new TreeLoadResult(root, nodes == null ? Collections.emptyList() : nodes);
         });
         if (result == null) {
             throw new BizException(countryRoot ? ErrorCode.COUNTRY_NOT_FOUND : ErrorCode.REGION_NOT_FOUND);
+        }
+        if (result.isOversized()) {
+            throw new BizException(ErrorCode.PARAM_INVALID);
         }
         return result;
     }
@@ -319,6 +326,8 @@ public class GeoDataCache {
         private GeoRegion root;
         /** 子树扁平节点列表（含根） */
         private List<GeoRegion> nodes;
+        /** 命中 tree-max-rows，结果不可用（短 TTL 防击穿） */
+        private boolean oversized;
 
         /** Jackson / 序列化用无参构造 */
         public TreeLoadResult() {
@@ -347,6 +356,14 @@ public class GeoDataCache {
 
         public void setNodes(List<GeoRegion> nodes) {
             this.nodes = nodes;
+        }
+
+        public boolean isOversized() {
+            return oversized;
+        }
+
+        public void setOversized(boolean oversized) {
+            this.oversized = oversized;
         }
     }
 }

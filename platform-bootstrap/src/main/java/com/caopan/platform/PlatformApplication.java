@@ -8,7 +8,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * Platform 应用启动类（platform-bootstrap）。
  * <p>Spring Boot 入口，扫描 {@code com.caopan.platform} 下 geo-service / geo-web 等 Bean，
  * 并 {@code @MapperScan} 注册区划 Mapper。常用 profile：{@code test}（内网可关鉴权）、
- * {@code online}/{@code prod}（须开内部 Token + 建议限流 fail-closed）。</p>
+ * {@code online}/{@code prod}（须开 DB Token 鉴权 + 建议限流 fail-closed）。</p>
  */
 @SpringBootApplication(scanBasePackages = "com.caopan.platform")
 @MapperScan("com.caopan.platform.geo.mapper")

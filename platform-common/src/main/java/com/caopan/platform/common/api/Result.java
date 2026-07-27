@@ -15,7 +15,7 @@ public class Result<T> implements Serializable {
 
     /** 业务码，0=成功 */
     private int code;
-    /** 提示信息（可按 Locale 国际化） */
+    /** 提示信息（英文） */
     private String message;
     /** 业务数据 */
     private T data;

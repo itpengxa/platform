@@ -8,27 +8,19 @@ import com.caopan.platform.api.vo.RegionVO;
 import com.caopan.platform.common.api.Result;
 import com.caopan.platform.common.exception.BizException;
 import com.caopan.platform.common.exception.ErrorCode;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 /**
  * 行政区划 REST 控制器（GEO-001 / platform-geo-web）。
- * <p>暴露国家列表、子级级联、子树、祖先链、关键词搜索等只读接口，统一包装为 {@link Result}。
- * 过滤器顺序：IP 限流在鉴权之前；test profile 默认可不鉴权，online/prod 须开启内部 Token
- *（{@code X-Platform-Token} / Bearer）并配合限流。</p>
+ * <p>过滤器：IP 限流（{@code platform.geo.rate-limit.enabled}）在前；
+ * 切面 DB Token 鉴权（{@code platform.geo.auth.enabled}）在 Controller 外层。
+ * Token 由 {@code POST /api/platform/v1/auth/token/issue} 无鉴权签发。</p>
  */
 @RestController
 @RequestMapping("/api/geo/v1")
 public class GeoController {
-
-    private static final Logger log = LoggerFactory.getLogger(GeoController.class);
 
     private final GeoService geoService;
 
@@ -52,7 +44,6 @@ public class GeoController {
     public Result<List<CountryVO>> countries(
             @RequestParam(required = false) String lang,
             @RequestParam(required = false) String keyword) {
-        log.info("API countries, lang={}, keyword={}", lang, keyword);
         return Result.ok(geoService.listCountries(lang, keyword));
     }
 
@@ -67,7 +58,6 @@ public class GeoController {
     public Result<List<RegionVO>> children(
             @RequestParam Long parentId,
             @RequestParam(required = false) String lang) {
-        log.info("API children, parentId={}, lang={}", parentId, lang);
         if (parentId == null || parentId <= 0) {
             throw new BizException(ErrorCode.PARAM_INVALID);
         }
@@ -90,7 +80,6 @@ public class GeoController {
             @RequestParam(required = false) Long rootId,
             @RequestParam(required = false) Integer depth,
             @RequestParam(required = false) String lang) {
-        log.info("API tree, countryCode={}, rootId={}, depth={}, lang={}", countryCode, rootId, depth, lang);
         return Result.ok(geoService.getTree(countryCode, rootId, depth, lang));
     }
 
@@ -105,7 +94,6 @@ public class GeoController {
     public Result<List<RegionVO>> path(
             @PathVariable Long id,
             @RequestParam(required = false) String lang) {
-        log.info("API path, id={}, lang={}", id, lang);
         return Result.ok(geoService.getPath(id, lang));
     }
 
@@ -127,8 +115,6 @@ public class GeoController {
             @RequestParam(required = false) Integer level,
             @RequestParam(required = false, defaultValue = "20") Integer limit,
             @RequestParam(required = false) String lang) {
-        log.info("API search, keyword={}, countryCode={}, level={}, limit={}, lang={}",
-                keyword, countryCode, level, limit, lang);
         return Result.ok(geoService.search(keyword, countryCode, level, limit, lang));
     }
 }

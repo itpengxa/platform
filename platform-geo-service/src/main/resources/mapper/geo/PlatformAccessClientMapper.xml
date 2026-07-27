@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caopan.platform.geo.mapper.PlatformAccessClientMapper">
+
+    <select id="findByCode" resultType="com.caopan.platform.geo.entity.PlatformAccessClient">
+        SELECT id, client_code, client_name, status, created_at, updated_at
+        FROM platform_access_client
+        WHERE client_code = #{clientCode}
+        LIMIT 1
+    </select>
+</mapper>

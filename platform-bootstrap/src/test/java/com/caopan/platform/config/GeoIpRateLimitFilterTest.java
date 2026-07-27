@@ -46,7 +46,7 @@ class GeoIpRateLimitFilterTest {
     @BeforeEach
     void setUp() {
         messageSource = new StaticMessageSource();
-        messageSource.addMessage("error.rate_limited", Locale.SIMPLIFIED_CHINESE, "限流");
+        messageSource.addMessage("error.rate_limited", Locale.ENGLISH, "Too many requests");
     }
 
     @Test
@@ -129,20 +129,38 @@ class GeoIpRateLimitFilterTest {
         when(redisProvider.getIfAvailable()).thenReturn(null);
         GeoIpRateLimitFilter disabled = new GeoIpRateLimitFilter(
                 new ObjectMapper(), messageSource, redisProvider,
-                true, false, false, false, 1000, 2000);
+                true, false, false, false, 1000, 1000, 2000);
         assertTrue(disabled.shouldNotFilter(geoRequest("/api/geo/v1/countries")));
 
         GeoIpRateLimitFilter enabled = newFilter(false, false);
         MockHttpServletRequest other = new MockHttpServletRequest("GET", "/health");
         assertTrue(enabled.shouldNotFilter(other));
         assertFalse(enabled.shouldNotFilter(geoRequest("/api/geo/v1/countries")));
+        assertFalse(enabled.shouldNotFilter(
+                new MockHttpServletRequest("POST", "/api/platform/v1/auth/token/issue")));
     }
 
     @Test
-    void order_isBeforeAuthFilter() {
+    void searchPath_usesIndependentBucketAt1s() throws Exception {
+        when(redisProvider.getIfAvailable()).thenReturn(null);
+        GeoIpRateLimitFilter filter = newFilter(false, false);
+
+        // 先打 countries（default 桶），不应占用 search 桶
+        filter.doFilter(geoRequest("/api/geo/v1/countries"), new MockHttpServletResponse(), filterChain);
+
+        MockHttpServletResponse first = new MockHttpServletResponse();
+        filter.doFilter(geoRequest("/api/geo/v1/regions/search"), first, filterChain);
+        assertEquals(200, first.getStatus());
+
+        MockHttpServletResponse limited = new MockHttpServletResponse();
+        filter.doFilter(geoRequest("/api/geo/v1/regions/search"), limited, filterChain);
+        assertEquals(429, limited.getStatus());
+    }
+
+    @Test
+    void order_isHighPrecedence() {
         int rateLimit = GeoIpRateLimitFilter.class.getAnnotation(Order.class).value();
-        int auth = GeoInternalAuthFilter.class.getAnnotation(Order.class).value();
-        assertTrue(rateLimit < auth);
+        assertTrue(rateLimit < org.springframework.core.Ordered.HIGHEST_PRECEDENCE + 20);
     }
 
     private GeoIpRateLimitFilter newFilter(boolean redisEnabled, boolean failClosed) {
@@ -154,6 +172,7 @@ class GeoIpRateLimitFilterTest {
                 true,
                 false,
                 failClosed,
+                1000L,
                 1000L,
                 2000L);
     }

@@ -31,7 +31,10 @@ import java.util.regex.Pattern;
 
 /**
  * 按客户端 IP 防刷（GEO-001 / platform-bootstrap）。
- * <p>Order 高于鉴权过滤器，保证限流在鉴权之前执行。默认接口最短间隔 1s，树查询 2s。
+ * <p>Order 高于 Controller 切面鉴权，保证限流在鉴权之前执行。
+ * 覆盖 {@code /api/geo/v1/**} 与 Token 签发 {@code /api/platform/v1/auth/token/issue}。
+ * 独立开关 {@code platform.geo.rate-limit.enabled}。
+ * 默认接口最短间隔 1s；搜索接口独立桶 1s；树查询 2s。
  * 默认不信任 X-Forwarded-For（防伪造）；仅网关剥离客户端 XFF 后可开启 trust-forwarded-headers。
  * Redis 不可用时：默认降级本地限流；online 建议开启 fail-closed 拒绝请求。</p>
  */
@@ -42,7 +45,9 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(GeoIpRateLimitFilter.class);
 
     private static final String GEO_PREFIX = "/api/geo/v1";
+    private static final String TOKEN_ISSUE_PATH = "/api/platform/v1/auth/token/issue";
     private static final String TREE_PATH = "/api/geo/v1/regions/tree";
+    private static final String SEARCH_PATH = "/api/geo/v1/regions/search";
     private static final String REDIS_KEY_PREFIX = "platform:geo:rl:";
     private static final Pattern IP_SAFE = Pattern.compile("^[0-9a-fA-F.:]{3,64}$");
 
@@ -54,6 +59,7 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
     private final boolean trustForwardedHeaders;
     private final boolean failClosed;
     private final long defaultIntervalMs;
+    private final long searchIntervalMs;
     private final long treeIntervalMs;
 
     private final ConcurrentHashMap<String, AtomicLong> localWindow = new ConcurrentHashMap<>();
@@ -70,6 +76,7 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
      * @param trustForwardedHeaders  是否信任 XFF/X-Real-IP
      * @param failClosed             Redis 不可用时是否直接拒绝
      * @param defaultIntervalMs      默认接口最小间隔毫秒
+     * @param searchIntervalMs       搜索接口最小间隔毫秒
      * @param treeIntervalMs         树接口最小间隔毫秒
      */
     public GeoIpRateLimitFilter(
@@ -81,6 +88,7 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
             @Value("${platform.geo.rate-limit.trust-forwarded-headers:false}") boolean trustForwardedHeaders,
             @Value("${platform.geo.rate-limit.fail-closed:false}") boolean failClosed,
             @Value("${platform.geo.rate-limit.default-interval-ms:1000}") long defaultIntervalMs,
+            @Value("${platform.geo.rate-limit.search-interval-ms:1000}") long searchIntervalMs,
             @Value("${platform.geo.rate-limit.tree-interval-ms:2000}") long treeIntervalMs) {
         this.objectMapper = objectMapper;
         this.messageSource = messageSource;
@@ -90,6 +98,7 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
         this.trustForwardedHeaders = trustForwardedHeaders;
         this.failClosed = failClosed;
         this.defaultIntervalMs = Math.max(defaultIntervalMs, 1L);
+        this.searchIntervalMs = Math.max(searchIntervalMs, 1L);
         this.treeIntervalMs = Math.max(treeIntervalMs, 1L);
     }
 
@@ -99,36 +108,51 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
             return true;
         }
         String uri = request.getRequestURI();
-        return uri == null || !uri.startsWith(GEO_PREFIX);
+        if (uri == null) {
+            return true;
+        }
+        return !uri.startsWith(GEO_PREFIX) && !isPath(uri, TOKEN_ISSUE_PATH);
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         String uri = request.getRequestURI();
-        boolean tree = isTreePath(uri);
-        long intervalMs = tree ? treeIntervalMs : defaultIntervalMs;
-        String bucket = tree ? "tree" : "default";
+        String bucket;
+        long intervalMs;
+        if (isPath(uri, TOKEN_ISSUE_PATH)) {
+            bucket = "issue";
+            intervalMs = defaultIntervalMs;
+        } else if (isPath(uri, TREE_PATH)) {
+            bucket = "tree";
+            intervalMs = treeIntervalMs;
+        } else if (isPath(uri, SEARCH_PATH)) {
+            // 搜索直打 DB、无三级缓存，独立桶按 IP 限流（默认 1qps）
+            bucket = "search";
+            intervalMs = searchIntervalMs;
+        } else {
+            bucket = "default";
+            intervalMs = defaultIntervalMs;
+        }
         String ip = resolveClientIp(request, trustForwardedHeaders);
         String limitKey = ip + ":" + bucket;
 
         if (!tryAcquire(limitKey, intervalMs)) {
-            log.warn("geo rate limited, ip={}, uri={}, intervalMs={}", ip, uri, intervalMs);
-            writeLimited(response, request);
+            log.warn("geo rate limited, ip={}, uri={}, bucket={}, intervalMs={}", ip, uri, bucket, intervalMs);
+            writeLimited(response);
             return;
         }
         filterChain.doFilter(request, response);
     }
 
-    private static boolean isTreePath(String uri) {
-        if (uri == null) {
+    private static boolean isPath(String uri, String canonical) {
+        if (uri == null || canonical == null) {
             return false;
         }
-        if (TREE_PATH.equals(uri)) {
+        if (canonical.equals(uri)) {
             return true;
         }
-        // 兼容尾斜杠
-        return (TREE_PATH + "/").equals(uri);
+        return (canonical + "/").equals(uri);
     }
 
     private boolean tryAcquire(String limitKey, long intervalMs) {
@@ -240,12 +264,11 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
         return ip != null && IP_SAFE.matcher(ip).matches();
     }
 
-    private void writeLimited(HttpServletResponse response, HttpServletRequest request) throws IOException {
+    private void writeLimited(HttpServletResponse response) throws IOException {
         response.setStatus(429);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        String message = ErrorMessages.resolve(
-                messageSource, ErrorCode.RATE_LIMITED, GlobalExceptionHandler.resolveLocale(request));
+        String message = ErrorMessages.resolve(messageSource, ErrorCode.RATE_LIMITED);
         Result<Void> body = Result.fail(ErrorCode.RATE_LIMITED.getCode(), message);
         objectMapper.writeValue(response.getWriter(), body);
     }
