@@ -155,9 +155,9 @@ public class GeoDataCache {
         if (depthRaw < 1 || depthRaw > 5) {
             throw new BizException(ErrorCode.PARAM_INVALID);
         }
-        // 未指定 rootId 时按国家级树处理，depth>4 直接封顶，避免错误缓存键
+        // 未指定 rootId 时按国家级树处理，depth>3 直接封顶，避免错误缓存键
         boolean countryRoot = rootId == null || rootId <= 0;
-        final int effectiveDepth = (countryRoot && depthRaw > 4) ? 4 : depthRaw;
+        final int effectiveDepth = (countryRoot && depthRaw > 3) ? 3 : depthRaw;
         String key = GeoCacheKeys.tree(code, rootId, effectiveDepth);
         TreeLoadResult result = tieredCache.get(key, TREE_RESULT, cacheProperties.treeTtl(), () -> {
             log.info("L3 load tree nodes, countryCode={}, rootId={}, depth={}", code, rootId, effectiveDepth);
@@ -183,20 +183,20 @@ public class GeoDataCache {
             }
             /*
              * 2) 深度封顶（双保险）：
-             * 入口已对「无 rootId 的国家级请求」把 effectiveDepth 压到 ≤4；
+             * 入口已对「无 rootId 的国家级请求」把 effectiveDepth 压到 ≤3；
              * 这里再拦一层：即便调用方带了 rootId 但该节点实际仍是 level=1（国家），
-             * depth=5 会一次拉到 L5 街镇，数据量过大，故国家级强制 ≤4（国→…→区县）。
+             * depth=5 会一次拉到 L5 街镇，数据量过大，故国家级强制 ≤3（国→…→区县）。
              * 省/市节点下钻仍可用 depth=5。
              */
             int depthUse = effectiveDepth;
             if (root.getLevel() != null && root.getLevel() == 1 && depthUse >= 4) {
-                depthUse = 4;
+                depthUse = 3;
             }
             // 根节点顺便暖 region 缓存，后续 path/children 可少打一次库
             tieredCache.put(GeoCacheKeys.region(root.getId()), root, cacheProperties.regionTtl());
             /*
              * 3) 用「最大 level」表达深度，而不是递归 N 次：
-             * depth=1 → 只要根；depth=4 且根为 L1 → maxLevel=4（国+省+市+区县）
+             * depth=1 → 只要根；depth=3 且根为 L1 → maxLevel=3（国+省+市）
              * SQL：path LIKE '根path%' AND level<=maxLevel，一次查出扁平列表再在内存组树
              */
             int maxLevel = root.getLevel() + depthUse - 1;
