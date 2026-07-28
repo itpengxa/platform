@@ -23,8 +23,8 @@ public class TieredCache {
 
     private static final Logger log = LoggerFactory.getLogger(TieredCache.class);
 
-    /** L1 负缓存哨兵（表示 DB 明确无数据） */
-    static final Object NULL_SENTINEL = new Object();
+    /** L1 负缓存哨兵（表示 DB 明确无数据）；L1 对该值使用短 TTL（与 L2 负缓存对齐） */
+    public static final Object NULL_SENTINEL = new Object();
     private static final String REDIS_NULL = "__NULL__";
 
     private final Cache<String, Object> localCache;

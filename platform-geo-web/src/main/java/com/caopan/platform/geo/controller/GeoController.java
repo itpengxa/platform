@@ -96,6 +96,9 @@ public class GeoController {
     public Result<List<RegionVO>> path(
             @PathVariable Long id,
             @RequestParam(required = false) String lang) {
+        if (id == null || id <= 0) {
+            throw new BizException(ErrorCode.PARAM_INVALID);
+        }
         return Result.ok(geoService.getPath(id, lang));
     }
 

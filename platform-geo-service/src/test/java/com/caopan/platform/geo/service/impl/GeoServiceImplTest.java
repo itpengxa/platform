@@ -82,6 +82,8 @@ class GeoServiceImplTest {
         hit.setLevel(3);
         when(geoDataCache.search(eq("Ha"), eq("VN"), isNull(), eq(20))).thenReturn(List.of(hit));
         when(geoDataCache.listByIds(List.of(1L, 2L, 3L))).thenReturn(Collections.emptyList());
+        when(geoDataCache.countChildren(org.mockito.ArgumentMatchers.anyList()))
+                .thenReturn(Collections.emptyMap());
 
         assertEquals(1, geoService.search("Ha", "vn", null, null, "en").size());
     }

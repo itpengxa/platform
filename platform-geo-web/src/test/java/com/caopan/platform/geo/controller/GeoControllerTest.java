@@ -89,6 +89,13 @@ class GeoControllerTest {
     }
 
     @Test
+    void path_invalidId_throws() {
+        BizException ex = assertThrows(BizException.class,
+                () -> geoController.path(0L, "en"));
+        assertEquals(ErrorCode.PARAM_INVALID.getCode(), ex.getCode());
+    }
+
+    @Test
     void search_delegates() {
         when(geoService.search("Ha", "VN", null, 20, "en")).thenReturn(List.of(new RegionSearchVO()));
 

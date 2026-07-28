@@ -54,17 +54,46 @@
         </foreach>
     </select>
 
+    <!-- 三路前缀 UNION，便于各字段走前缀索引；外层再排序截断 -->
     <select id="search" resultType="com.caopan.platform.geo.entity.GeoRegion">
-        SELECT <include refid="RegionColumns"/>
-        FROM geo_region
-        WHERE status = 1
-          AND country_code = #{countryCode}
-          AND (name LIKE CONCAT(#{keyword}, '%')
-            OR name_en LIKE CONCAT(#{keyword}, '%')
-            OR name_ch LIKE CONCAT(#{keyword}, '%'))
-        <if test="level != null">
-            AND level = #{level}
-        </if>
+        (
+            SELECT <include refid="RegionColumns"/>
+            FROM geo_region
+            WHERE status = 1
+              AND country_code = #{countryCode}
+              AND name LIKE CONCAT(#{keyword}, '%')
+            <if test="level != null">
+              AND level = #{level}
+            </if>
+            ORDER BY level ASC, sort ASC, id ASC
+            LIMIT #{limit}
+        )
+        UNION
+        (
+            SELECT <include refid="RegionColumns"/>
+            FROM geo_region
+            WHERE status = 1
+              AND country_code = #{countryCode}
+              AND name_en LIKE CONCAT(#{keyword}, '%')
+            <if test="level != null">
+              AND level = #{level}
+            </if>
+            ORDER BY level ASC, sort ASC, id ASC
+            LIMIT #{limit}
+        )
+        UNION
+        (
+            SELECT <include refid="RegionColumns"/>
+            FROM geo_region
+            WHERE status = 1
+              AND country_code = #{countryCode}
+              AND name_ch LIKE CONCAT(#{keyword}, '%')
+            <if test="level != null">
+              AND level = #{level}
+            </if>
+            ORDER BY level ASC, sort ASC, id ASC
+            LIMIT #{limit}
+        )
         ORDER BY level ASC, sort ASC, id ASC
         LIMIT #{limit}
     </select>

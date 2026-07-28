@@ -48,8 +48,8 @@ platform:
       jitter-seconds: 300
       # miss 负缓存 TTL（秒），防穿透
       negative-ttl-seconds: 30
-      # 树查询最大行数：命中上限视为可能截断，拒绝返回（联调可临时调大）
-      tree-max-rows: 3000
+      # 树查询最大行数：命中上限视为可能截断，拒绝返回（VN depth4≈1.2万，默认放宽）
+      tree-max-rows: 20000
       # 国家级根（未传 rootId / level=1）允许的最大 depth（1~5）；请求更大时封顶
       # 例：4=国→省→市→区；5=可到街镇（数据量大，配合 tree-max-rows）
       tree-country-max-depth: 4
@@ -65,15 +65,19 @@ platform:
       search-interval-ms: 1000
       tree-interval-ms: 2000
     auth:
-      # 独立开关：false 则跳过 Token 校验（online/prod 启动门禁禁止关闭）
-      enabled: true
+      # 独立开关：false 则跳过 Token 校验
+      enabled: false
+      # 签发密钥：非空时 Issue 必须带 Header X-Platform-Issue-Secret；online 强制非空
+      # 本地默认值仅供联调，online 请用环境变量 PLATFORM_GEO_ISSUE_SECRET 覆盖
+      issue-secret: ${PLATFORM_GEO_ISSUE_SECRET:local-dev-issue-secret}
       # Redis：Issue 分布式锁 + valid:{hash}（依赖 cache.redis-enabled 与 Redis 可用）
       redis-token-sync-enabled: true
       issue-lock-key-prefix: "platform:auth:issue-lock:"
       valid-key-prefix: "platform:auth:valid:"
-      issue-lock-seconds: 30
+      issue-lock-seconds: 60
       issue-lock-retry-times: 8
       issue-lock-retry-ms: 50
+      valid-ttl-days: 365
     access-log:
       args-enabled: true
       exception-enabled: true

@@ -56,7 +56,7 @@ public class GeoServiceImpl implements GeoService {
      */
     @Override
     public List<CountryVO> listCountries(String lang, String keyword) {
-        log.info("listCountries start, lang={}, keyword={}", lang, keyword);
+        log.debug("listCountries start, lang={}, keyword={}", lang, keyword);
         String kw = trimToNull(keyword);
         if (kw != null) {
             if (kw.length() > 64 || kw.length() < 1
@@ -72,7 +72,7 @@ public class GeoServiceImpl implements GeoService {
         for (GeoCountry c : list) {
             result.add(toCountryVO(c, lang));
         }
-        log.info("listCountries end, size={}", result.size());
+        log.debug("listCountries end, size={}", result.size());
         return result;
     }
 
@@ -85,7 +85,7 @@ public class GeoServiceImpl implements GeoService {
      */
     @Override
     public List<RegionVO> listChildren(Long parentId, String lang) {
-        log.info("listChildren start, parentId={}, lang={}", parentId, lang);
+        log.debug("listChildren start, parentId={}, lang={}", parentId, lang);
         if (parentId == null || parentId <= 0) {
             throw new BizException(ErrorCode.PARAM_INVALID);
         }
@@ -101,7 +101,7 @@ public class GeoServiceImpl implements GeoService {
             vo.setIsLeaf(childCounts.getOrDefault(r.getId(), 0) == 0);
             result.add(vo);
         }
-        log.info("listChildren end, parentId={}, size={}", parentId, result.size());
+        log.debug("listChildren end, parentId={}, size={}", parentId, result.size());
         return result;
     }
 
@@ -133,13 +133,13 @@ public class GeoServiceImpl implements GeoService {
      */
     @Override
     public RegionTreeVO getTree(String countryCode, Long rootId, Integer depth, String lang) {
-        log.info("getTree start, countryCode={}, rootId={}, depth={}, lang={}", countryCode, rootId, depth, lang);
+        log.debug("getTree start, countryCode={}, rootId={}, depth={}, lang={}", countryCode, rootId, depth, lang);
         GeoDataCache.TreeLoadResult loaded = geoDataCache.loadTreeNodes(countryCode, rootId, depth);
         RegionTreeVO tree = buildTree(loaded.getNodes(), loaded.getRoot().getId(), lang);
         if (tree == null) {
             tree = toRegionTreeVO(loaded.getRoot(), lang);
         }
-        log.info("getTree end, countryCode={}, nodeCount={}", countryCode, loaded.getNodes().size());
+        log.debug("getTree end, countryCode={}, nodeCount={}", countryCode, loaded.getNodes().size());
         return tree;
     }
 
@@ -152,7 +152,7 @@ public class GeoServiceImpl implements GeoService {
      */
     @Override
     public List<RegionVO> getPath(Long id, String lang) {
-        log.info("getPath start, id={}, lang={}", id, lang);
+        log.debug("getPath start, id={}, lang={}", id, lang);
         if (id == null || id <= 0) {
             throw new BizException(ErrorCode.PARAM_INVALID);
         }
@@ -168,7 +168,7 @@ public class GeoServiceImpl implements GeoService {
         }
         List<Long> ids = PathUtil.parsePathIds(current.getPath());
         if (ids.isEmpty()) {
-            return Collections.singletonList(toRegionVO(current, lang));
+            ids = Collections.singletonList(current.getId());
         }
         List<RegionVO> path = new ArrayList<>();
         for (Long pathId : ids) {
@@ -177,7 +177,8 @@ public class GeoServiceImpl implements GeoService {
                 path.add(toRegionVO(r, lang));
             }
         }
-        log.info("getPath end, id={}, depth={}", id, path.size());
+        applyActualIsLeaf(path);
+        log.debug("getPath end, id={}, depth={}", id, path.size());
         return path;
     }
 
@@ -194,7 +195,7 @@ public class GeoServiceImpl implements GeoService {
      */
     @Override
     public List<RegionSearchVO> search(String keyword, String countryCode, Integer level, Integer limit, String lang) {
-        log.info("search start, keyword={}, countryCode={}, level={}, limit={}, lang={}",
+        log.debug("search start, keyword={}, countryCode={}, level={}, limit={}, lang={}",
                 keyword, countryCode, level, limit, lang);
         if (!StringUtils.hasText(keyword) || keyword.trim().length() > 64) {
             throw new BizException(ErrorCode.PARAM_INVALID);
@@ -224,7 +225,8 @@ public class GeoServiceImpl implements GeoService {
             vo.setFullPathName(buildFullPathName(hit, lang, ancestorCache));
             result.add(vo);
         }
-        log.info("search end, size={}", result.size());
+        applyActualIsLeaf(result);
+        log.debug("search end, size={}", result.size());
         return result;
     }
 
@@ -354,7 +356,35 @@ public class GeoServiceImpl implements GeoService {
     }
 
     /**
-     * 将区划实体公共字段填入 VO（含 displayName / isLeaf）。
+     * 批量按实子节点数覆盖 isLeaf，与 listChildren/tree 语义统一（不信任库内可能脏的 is_leaf）。
+     *
+     * @param vos 区划 VO 列表
+     */
+    private void applyActualIsLeaf(List<? extends RegionVO> vos) {
+        if (vos == null || vos.isEmpty()) {
+            return;
+        }
+        List<GeoRegion> probe = new ArrayList<>(vos.size());
+        for (RegionVO vo : vos) {
+            if (vo == null || vo.getId() == null) {
+                continue;
+            }
+            GeoRegion r = new GeoRegion();
+            r.setId(vo.getId());
+            probe.add(r);
+        }
+        Map<Long, Integer> counts = countChildMap(probe);
+        for (RegionVO vo : vos) {
+            if (vo == null || vo.getId() == null) {
+                continue;
+            }
+            vo.setIsLeaf(counts.getOrDefault(vo.getId(), 0) == 0);
+        }
+    }
+
+    /**
+     * 将区划实体公共字段填入 VO（含 displayName）。
+     * <p>isLeaf 默认先按库字段占位；listChildren/tree/path/search 在组装后按实子覆盖。</p>
      *
      * @param vo   目标 VO
      * @param r    源实体
@@ -372,7 +402,6 @@ public class GeoServiceImpl implements GeoService {
         vo.setLevel(r.getLevel());
         vo.setRegionType(r.getRegionType());
         vo.setPath(r.getPath());
-        // path/search：用库内 is_leaf；listChildren/tree 在组装后按实际子节点覆盖，避免双路径语义分叉
         vo.setIsLeaf(r.getIsLeaf() != null && r.getIsLeaf() == 1);
     }
 

@@ -5,6 +5,7 @@ import com.caopan.platform.geo.cache.TieredCache;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.Expiry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -17,7 +18,8 @@ import java.util.concurrent.TimeUnit;
 /**
  * 三级缓存装配（GEO-001 / platform-bootstrap）。
  * <p>创建 L1 Caffeine 与 {@link TieredCache}（L1→L2 Redis→L3 DB）；
- * TTL/容量来自 {@link GeoCacheProperties}。Redis 不可用或关闭时降级 L1+DB。</p>
+ * TTL/容量来自 {@link GeoCacheProperties}。负缓存条目使用与 L2 一致的短 TTL，正缓存用 L1 TTL。
+ * Redis 不可用或关闭时降级 L1+DB。</p>
  */
 @Configuration
 @EnableConfigurationProperties(GeoCacheProperties.class)
@@ -26,16 +28,33 @@ public class CacheConfig {
     private static final Logger log = LoggerFactory.getLogger(CacheConfig.class);
 
     /**
-     * L1 本地缓存 Bean。
+     * L1 本地缓存 Bean（可变过期：负缓存短 TTL，正缓存长 TTL）。
      *
      * @param props 缓存配置
      * @return Caffeine Cache
      */
     @Bean
     public Cache<String, Object> geoLocalCache(GeoCacheProperties props) {
+        long positiveNanos = TimeUnit.MINUTES.toNanos(Math.max(props.getL1TtlMinutes(), 1L));
+        long negativeNanos = TimeUnit.SECONDS.toNanos(Math.max(props.getNegativeTtlSeconds(), 1L));
         return Caffeine.newBuilder()
                 .maximumSize(Math.max(props.getL1MaximumSize(), 100L))
-                .expireAfterWrite(Math.max(props.getL1TtlMinutes(), 1L), TimeUnit.MINUTES)
+                .expireAfter(new Expiry<String, Object>() {
+                    @Override
+                    public long expireAfterCreate(String key, Object value, long currentTime) {
+                        return value == TieredCache.NULL_SENTINEL ? negativeNanos : positiveNanos;
+                    }
+
+                    @Override
+                    public long expireAfterUpdate(String key, Object value, long currentTime, long currentDuration) {
+                        return value == TieredCache.NULL_SENTINEL ? negativeNanos : positiveNanos;
+                    }
+
+                    @Override
+                    public long expireAfterRead(String key, Object value, long currentTime, long currentDuration) {
+                        return currentDuration;
+                    }
+                })
                 .recordStats()
                 .build();
     }
@@ -60,8 +79,9 @@ public class CacheConfig {
         if (!useRedis) {
             log.warn("TieredCache Redis L2 disabled, fallback L1+DB only");
         } else {
-            log.info("TieredCache enabled: L1=Caffeine(max={}, ttl={}m), L2=Redis(jitter={}s), L3=DB",
-                    props.getL1MaximumSize(), props.getL1TtlMinutes(), props.getJitterSeconds());
+            log.info("TieredCache enabled: L1=Caffeine(max={}, ttl={}m, neg={}s), L2=Redis(jitter={}s), L3=DB",
+                    props.getL1MaximumSize(), props.getL1TtlMinutes(),
+                    props.getNegativeTtlSeconds(), props.getJitterSeconds());
         }
         return new TieredCache(geoLocalCache, redis, objectMapper, useRedis, props.negativeTtl());
     }

@@ -10,6 +10,7 @@ import java.util.UUID;
 
 /**
  * Token 签发分布式锁与 {@code valid:{hash}} 标记（多实例一致）。
+ * <p>{@code valid} 带 TTL，避免永久 key；吊销时主动 DEL。</p>
  */
 final class AccessTokenRedisSupport {
 
@@ -23,6 +24,7 @@ final class AccessTokenRedisSupport {
     private final long issueLockSeconds;
     private final int issueLockRetryTimes;
     private final long issueLockRetryMs;
+    private final Duration validTtl;
 
     AccessTokenRedisSupport(
             StringRedisTemplate redis,
@@ -30,13 +32,17 @@ final class AccessTokenRedisSupport {
             String validPrefix,
             long issueLockSeconds,
             int issueLockRetryTimes,
-            long issueLockRetryMs) {
+            long issueLockRetryMs,
+            Duration validTtl) {
         this.redis = redis;
         this.issueLockPrefix = issueLockPrefix;
         this.validPrefix = validPrefix;
         this.issueLockSeconds = Math.max(issueLockSeconds, 5L);
         this.issueLockRetryTimes = Math.max(issueLockRetryTimes, 1);
         this.issueLockRetryMs = Math.max(issueLockRetryMs, 10L);
+        this.validTtl = validTtl == null || validTtl.isZero() || validTtl.isNegative()
+                ? Duration.ofDays(365)
+                : validTtl;
     }
 
     /**
@@ -70,8 +76,11 @@ final class AccessTokenRedisSupport {
         return Boolean.TRUE.equals(redis.hasKey(validKey(tokenHash)));
     }
 
+    /**
+     * 标记 Token 有效；TTL 对齐配置，防止永久驻留。
+     */
     void markValid(String tokenHash) {
-        redis.opsForValue().set(validKey(tokenHash), "1");
+        redis.opsForValue().set(validKey(tokenHash), "1", validTtl);
     }
 
     void revokeValid(List<String> tokenHashes) {

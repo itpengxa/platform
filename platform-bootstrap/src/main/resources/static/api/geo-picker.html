@@ -22,6 +22,7 @@
     clientName: q.get('clientName') || q.get('clientCode') || 'H5 Embed',
     lang: q.get('lang') || 'en',
     apiBase: q.get('apiBase') || '',
+    issueSecret: q.get('issueSecret') || 'local-dev-issue-secret',
     primaryColor: q.get('primaryColor') || '#e1251b',
     onConfirm: function () {
       if (q.get('autoClose') !== '0') {

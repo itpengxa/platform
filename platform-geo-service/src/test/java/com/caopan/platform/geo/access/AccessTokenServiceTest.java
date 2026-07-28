@@ -15,6 +15,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
 
 import java.util.Collections;
 
@@ -24,6 +27,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,23 +41,29 @@ class AccessTokenServiceTest {
     private PlatformAccessTokenMapper tokenMapper;
     @Mock
     private ObjectProvider<StringRedisTemplate> redisProvider;
+    @Mock
+    private PlatformTransactionManager transactionManager;
 
     private AccessTokenService service;
 
     @BeforeEach
     void setUp() {
         when(redisProvider.getIfAvailable()).thenReturn(null);
+        TransactionStatus status = mock(TransactionStatus.class);
+        lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class))).thenReturn(status);
         service = new AccessTokenService(
                 clientMapper,
                 tokenMapper,
                 redisProvider,
+                transactionManager,
                 false,
                 true,
                 "platform:auth:issue-lock:",
                 "platform:auth:valid:",
-                30,
+                60,
                 8,
-                50);
+                50,
+                365);
     }
 
     @Test

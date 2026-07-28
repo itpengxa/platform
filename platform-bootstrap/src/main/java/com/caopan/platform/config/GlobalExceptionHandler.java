@@ -15,6 +15,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
  * 全局异常处理（platform-bootstrap）。
@@ -69,6 +70,21 @@ public class GlobalExceptionHandler {
         log.warn("param invalid, message={}", e.getMessage());
         String message = ErrorMessages.resolve(messageSource, ErrorCode.PARAM_INVALID);
         return Result.fail(ErrorCode.PARAM_INVALID.getCode(), message);
+    }
+
+    /**
+     * 静态资源 / 未映射路径 404：常见于浏览器扫根路径、探活、误打 URL。
+     * <p>只打 WARN，不打 ERROR/slsnotify，避免噪声误报。</p>
+     *
+     * @param e       Spring 6 {@code NoResourceFoundException}
+     * @param request 当前请求
+     * @return HTTP 404 + Result
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Result<Void>> handleNoResource(NoResourceFoundException e, HttpServletRequest request) {
+        log.warn("resource not found, uri={}, resource={}", request.getRequestURI(), e.getResourcePath());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Result.fail(40404, "Not found"));
     }
 
     /**

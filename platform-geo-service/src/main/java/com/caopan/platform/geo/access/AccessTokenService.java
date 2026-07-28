@@ -13,12 +13,14 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.Collections;
@@ -28,8 +30,9 @@ import java.util.regex.Pattern;
 
 /**
  * 长效 Token 签发与查库解析（GEO-001 / platform-geo-service）。
- * <p>多实例：启用 Redis 时 Issue 使用分布式锁；解析先查 {@code valid:{hash}} 再查库。
- * Redis 未启用时退化为仅 DB（无跨节点吊销同步）。</p>
+ * <p>多实例：启用 Redis 时 Issue 使用分布式锁（锁仅覆盖事务段，由 {@link TransactionTemplate} 开启）；
+ * 解析以 <b>DB 为权威</b>：库内无效则 401 并清理 Redis；库内有效则回填/刷新 {@code valid:{hash}}（带 TTL）。
+ * Redis 未启用时退化为仅 DB。</p>
  */
 @Service
 public class AccessTokenService {
@@ -41,11 +44,13 @@ public class AccessTokenService {
     private final PlatformAccessClientMapper clientMapper;
     private final PlatformAccessTokenMapper tokenMapper;
     private final AccessTokenRedisSupport redisSupport;
+    private final TransactionTemplate transactionTemplate;
 
     /**
      * @param clientMapper            接入方 Mapper
      * @param tokenMapper             Token Mapper
      * @param redisProvider           可选 Redis
+     * @param transactionManager      事务管理器（编程式事务，缩小 Redis 锁持有范围）
      * @param cacheRedisEnabled       {@code platform.geo.cache.redis-enabled}
      * @param redisTokenSyncEnabled   {@code platform.geo.auth.redis-token-sync-enabled}
      * @param issueLockPrefix         Issue 锁 key 前缀
@@ -53,24 +58,34 @@ public class AccessTokenService {
      * @param issueLockSeconds        锁 TTL 秒
      * @param issueLockRetryTimes     抢锁重试次数
      * @param issueLockRetryMs        抢锁重试间隔毫秒
+     * @param validTtlDays            valid key TTL 天
      */
     public AccessTokenService(
             PlatformAccessClientMapper clientMapper,
             PlatformAccessTokenMapper tokenMapper,
             ObjectProvider<StringRedisTemplate> redisProvider,
+            PlatformTransactionManager transactionManager,
             @Value("${platform.geo.cache.redis-enabled:true}") boolean cacheRedisEnabled,
             @Value("${platform.geo.auth.redis-token-sync-enabled:true}") boolean redisTokenSyncEnabled,
             @Value("${platform.geo.auth.issue-lock-key-prefix:platform:auth:issue-lock:}") String issueLockPrefix,
             @Value("${platform.geo.auth.valid-key-prefix:platform:auth:valid:}") String validKeyPrefix,
-            @Value("${platform.geo.auth.issue-lock-seconds:30}") long issueLockSeconds,
+            @Value("${platform.geo.auth.issue-lock-seconds:60}") long issueLockSeconds,
             @Value("${platform.geo.auth.issue-lock-retry-times:8}") int issueLockRetryTimes,
-            @Value("${platform.geo.auth.issue-lock-retry-ms:50}") long issueLockRetryMs) {
+            @Value("${platform.geo.auth.issue-lock-retry-ms:50}") long issueLockRetryMs,
+            @Value("${platform.geo.auth.valid-ttl-days:365}") long validTtlDays) {
         this.clientMapper = clientMapper;
         this.tokenMapper = tokenMapper;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
         StringRedisTemplate redis = redisProvider.getIfAvailable();
         if (cacheRedisEnabled && redisTokenSyncEnabled && redis != null) {
             this.redisSupport = new AccessTokenRedisSupport(
-                    redis, issueLockPrefix, validKeyPrefix, issueLockSeconds, issueLockRetryTimes, issueLockRetryMs);
+                    redis,
+                    issueLockPrefix,
+                    validKeyPrefix,
+                    issueLockSeconds,
+                    issueLockRetryTimes,
+                    issueLockRetryMs,
+                    Duration.ofDays(Math.max(validTtlDays, 1L)));
         } else {
             this.redisSupport = null;
             if (redisTokenSyncEnabled && cacheRedisEnabled) {
@@ -81,8 +96,8 @@ public class AccessTokenService {
 
     /**
      * 签发（或换新）Token；明文仅在本方法返回值中出现一次。
+     * <p>先抢 Redis 锁，再在锁内开启短事务写库，避免锁 TTL 短于事务持有时间。</p>
      */
-    @Transactional
     public IssuedToken issue(String clientCode, String clientName) {
         String code = normalizeClientCode(clientCode);
         String lockToken = null;
@@ -93,7 +108,7 @@ public class AccessTokenService {
             }
         }
         try {
-            return issueUnderLock(code, clientName);
+            return transactionTemplate.execute(status -> issueUnderLock(code, clientName));
         } finally {
             if (redisSupport != null) {
                 redisSupport.releaseIssueLock(code, lockToken);
@@ -151,8 +166,8 @@ public class AccessTokenService {
     }
 
     /**
-     * 解析：有 Redis 时以 {@code valid:{hash}} 为准；未命中则查库，库内仍有效则回填 Redis。
-     * 库内无效则 401 并清理 Redis 脏 key。
+     * 解析：以 DB 为权威；库内无效 → 401 并清理 Redis；库内有效 → 回填/刷新 Redis valid（带 TTL）。
+     * Redis valid 用于多实例吊销后的辅助加速，不作「仅 Redis miss 即拒绝」的门闩（避免 Redis 闪断误杀）。
      */
     public CallerContext parse(String rawToken) {
         if (!StringUtils.hasText(rawToken)) {
@@ -169,7 +184,8 @@ public class AccessTokenService {
             throw new BizException(ErrorCode.UNAUTHORIZED);
         }
 
-        if (redisSupport != null && !redisSupport.isValidTokenHash(hash)) {
+        if (redisSupport != null) {
+            // 刷新 TTL；吊销场景已在 DB status 失效，上面分支清理 Redis
             redisSupport.markValid(hash);
         }
         return new CallerContext(row.getClientId(), row.getClientCode(), row.getTokenId());

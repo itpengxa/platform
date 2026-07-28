@@ -39,6 +39,8 @@ platform:
     cache:
       redis-enabled: true
       jitter-seconds: 600
+      tree-max-rows: 20000
+      tree-country-max-depth: 4
     rate-limit:
       enabled: true
       trust-forwarded-headers: false
@@ -47,9 +49,12 @@ platform:
       search-interval-ms: 1000
       tree-interval-ms: 2000
     auth:
-      enabled: true
+      enabled: false
       redis-token-sync-enabled: true
-      issue-lock-seconds: 30
+      issue-lock-seconds: 60
+      valid-ttl-days: 365
+      # 生产必须通过环境变量注入，禁止默认空串
+      issue-secret: ${PLATFORM_GEO_ISSUE_SECRET:local-dev-issue-secret}
     access-log:
       args-enabled: true
       exception-enabled: true

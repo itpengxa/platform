@@ -80,6 +80,9 @@ header h1{font-size:15px;font-weight:600;color:#f0f6fc;white-space:nowrap}
     </label>
     <input id="clientCodeInput" value="debug" title="签发 clientCode"
       style="width:52px;padding:2px 5px;background:#21262d;border:1px solid #30363d;border-radius:3px;color:#8b949e;font-size:10px;outline:none">
+    <input id="issueSecretInput" value="local-dev-issue-secret" title="X-Platform-Issue-Secret"
+      style="width:120px;padding:2px 5px;background:#21262d;border:1px solid #30363d;border-radius:3px;color:#8b949e;font-size:10px;outline:none"
+      placeholder="Issue Secret">
     <button type="button" onclick="issueToken()" style="padding:2px 8px;background:#238636;border:1px solid #2ea043;border-radius:3px;color:#fff;font-size:10px;cursor:pointer">签发</button>
     <a href="javascript:location.reload()" style="color:#58a6ff;text-decoration:none">刷新</a>
   </div>
@@ -155,7 +158,11 @@ async function issueToken(){
   try{
     const r=await fetch('/api/platform/v1/auth/token/issue',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Accept':'application/json'},
+      headers:{
+        'Content-Type':'application/json',
+        'Accept':'application/json',
+        'X-Platform-Issue-Secret':(document.getElementById('issueSecretInput').value||'').trim()
+      },
       body:JSON.stringify({clientCode:code,clientName:'GEO Debug UI'})
     });
     const d=await r.json();

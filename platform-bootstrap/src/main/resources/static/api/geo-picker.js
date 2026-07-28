@@ -48,15 +48,22 @@
     return 'platform_geo_token_' + clientCode;
   }
 
-  async function ensureToken(apiBase, clientCode, clientName) {
+  async function ensureToken(apiBase, clientCode, clientName, issueSecret) {
     const key = tokenStorageKey(clientCode);
     try {
       const cached = sessionStorage.getItem(key);
       if (cached) return cached;
     } catch (e) {}
+    const headers = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json'
+    };
+    if (issueSecret) {
+      headers['X-Platform-Issue-Secret'] = issueSecret;
+    }
     const res = await fetch(apiBase + '/api/platform/v1/auth/token/issue', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: headers,
       body: JSON.stringify({ clientCode: clientCode, clientName: clientName || clientCode }),
     });
     const json = await res.json();
@@ -114,6 +121,7 @@
     const lang = config.lang || 'en';
     const apiBase = (config.apiBase != null ? config.apiBase : '').replace(/\/$/, '');
     const primary = config.primaryColor || '#e1251b';
+    const issueSecret = config.issueSecret || '';
 
     injectStyles();
 
@@ -272,7 +280,7 @@
       showLoading();
       renderTabs();
       try {
-        const token = await ensureToken(apiBase, clientCode, clientName);
+        const token = await ensureToken(apiBase, clientCode, clientName, issueSecret);
         api = createApi(apiBase, token, lang);
         setStatus(clientCode);
         await renderList();
