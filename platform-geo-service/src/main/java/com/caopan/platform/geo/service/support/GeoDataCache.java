@@ -156,7 +156,7 @@ public class GeoDataCache {
             throw new BizException(ErrorCode.PARAM_INVALID);
         }
         // 国家级根：depth 超过配置封顶，缓存键使用封顶后的值，避免同请求不同键
-        int countryMaxDepth = cacheProperties.getTreeCountryMaxDepth();
+        int countryMaxDepth = cacheProperties.resolvedTreeCountryMaxDepth();
         boolean countryRoot = rootId == null || rootId <= 0;
         final int effectiveDepth = (countryRoot && depthRaw > countryMaxDepth) ? countryMaxDepth : depthRaw;
         String key = GeoCacheKeys.tree(code, rootId, effectiveDepth);
@@ -189,7 +189,7 @@ public class GeoDataCache {
              * 仍按同一配置封顶。省/市等非国家级根可用到 depth=5。
              */
             int depthUse = effectiveDepth;
-            int countryCap = cacheProperties.getTreeCountryMaxDepth();
+            int countryCap = cacheProperties.resolvedTreeCountryMaxDepth();
             if (root.getLevel() != null && root.getLevel() == 1 && depthUse > countryCap) {
                 depthUse = countryCap;
             }
@@ -205,23 +205,21 @@ public class GeoDataCache {
              * 4) 行数硬顶（platform.geo.cache.tree-max-rows）：
              * LIMIT=maxRows 时「刚好拉满」视为可能截断，拒绝返回半棵树。
              */
-            int maxRows = cacheProperties.getTreeMaxRows();
+            int maxRows = cacheProperties.resolvedTreeMaxRows();
             List<GeoRegion> nodes = geoRegionMapper.listSubtree(root.getPath(), maxLevel, maxRows);
             if (nodes != null && nodes.size() >= maxRows) {
                 log.warn("tree result hit maxRows={}, countryCode={}, rootId={}, depth={}",
                         maxRows, code, rootId, depthUse);
                 // 短 TTL 缓存 oversized 标记，避免反复打重 SQL；错误码仍由外层抛 PARAM_INVALID
-                TreeLoadResult oversized = new TreeLoadResult(root, Collections.emptyList());
-                oversized.setOversized(true);
-                tieredCache.put(key, oversized, cacheProperties.negativeTtl());
+                tieredCache.put(key, TreeLoadResult.oversized(root), cacheProperties.negativeTtl());
                 throw new BizException(ErrorCode.PARAM_INVALID);
             }
-            return new TreeLoadResult(root, nodes == null ? Collections.emptyList() : nodes);
+            return new TreeLoadResult(root, nodes == null ? List.of() : nodes, false);
         });
         if (result == null) {
             throw new BizException(countryRoot ? ErrorCode.COUNTRY_NOT_FOUND : ErrorCode.REGION_NOT_FOUND);
         }
-        if (result.isOversized()) {
+        if (result.oversized()) {
             throw new BizException(ErrorCode.PARAM_INVALID);
         }
         return result;
@@ -321,50 +319,31 @@ public class GeoDataCache {
     /**
      * 子树加载结果：根节点 + 扁平节点列表（含根）。
      */
-    public static final class TreeLoadResult implements java.io.Serializable {
-        private static final long serialVersionUID = 1L;
-        /** 树根节点 */
-        private GeoRegion root;
-        /** 子树扁平节点列表（含根） */
-        private List<GeoRegion> nodes;
-        /** 命中 tree-max-rows，结果不可用（短 TTL 防击穿） */
-        private boolean oversized;
+    public record TreeLoadResult(GeoRegion root, List<GeoRegion> nodes, boolean oversized)
+            implements java.io.Serializable {
 
-        /** Jackson / 序列化用无参构造 */
-        public TreeLoadResult() {
+        public TreeLoadResult {
+            nodes = nodes == null ? List.of() : List.copyOf(nodes);
         }
 
-        /**
-         * @param root  树根
-         * @param nodes 扁平节点（含根）
-         */
         public TreeLoadResult(GeoRegion root, List<GeoRegion> nodes) {
-            this.root = root;
-            this.nodes = nodes;
+            this(root, nodes, false);
+        }
+
+        public static TreeLoadResult oversized(GeoRegion root) {
+            return new TreeLoadResult(root, List.of(), true);
         }
 
         public GeoRegion getRoot() {
             return root;
         }
 
-        public void setRoot(GeoRegion root) {
-            this.root = root;
-        }
-
         public List<GeoRegion> getNodes() {
             return nodes;
         }
 
-        public void setNodes(List<GeoRegion> nodes) {
-            this.nodes = nodes;
-        }
-
         public boolean isOversized() {
             return oversized;
-        }
-
-        public void setOversized(boolean oversized) {
-            this.oversized = oversized;
         }
     }
 }

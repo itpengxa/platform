@@ -10,8 +10,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.caopan.platform.geo.cache.GeoCacheProperties;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.MessageSource;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -65,41 +65,22 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
     private final ConcurrentHashMap<String, AtomicLong> localWindow = new ConcurrentHashMap<>();
     private final AtomicLong lastCleanupAt = new AtomicLong(0L);
 
-    /**
-     * 注入依赖构造。
-     *
-     * @param objectMapper           JSON 写出限流响应
-     * @param messageSource          限流文案国际化
-     * @param redisProvider          可选 Redis（分布式限流）
-     * @param redisEnabled           是否启用 Redis
-     * @param enabled                是否启用本过滤器
-     * @param trustForwardedHeaders  是否信任 XFF/X-Real-IP
-     * @param failClosed             Redis 不可用时是否直接拒绝
-     * @param defaultIntervalMs      默认接口最小间隔毫秒
-     * @param searchIntervalMs       搜索接口最小间隔毫秒
-     * @param treeIntervalMs         树接口最小间隔毫秒
-     */
     public GeoIpRateLimitFilter(
             ObjectMapper objectMapper,
             MessageSource messageSource,
             ObjectProvider<StringRedisTemplate> redisProvider,
-            @Value("${platform.geo.cache.redis-enabled:true}") boolean redisEnabled,
-            @Value("${platform.geo.rate-limit.enabled:true}") boolean enabled,
-            @Value("${platform.geo.rate-limit.trust-forwarded-headers:false}") boolean trustForwardedHeaders,
-            @Value("${platform.geo.rate-limit.fail-closed:false}") boolean failClosed,
-            @Value("${platform.geo.rate-limit.default-interval-ms:1000}") long defaultIntervalMs,
-            @Value("${platform.geo.rate-limit.search-interval-ms:1000}") long searchIntervalMs,
-            @Value("${platform.geo.rate-limit.tree-interval-ms:2000}") long treeIntervalMs) {
+            GeoCacheProperties cacheProperties,
+            GeoRateLimitProperties rateLimitProperties) {
         this.objectMapper = objectMapper;
         this.messageSource = messageSource;
         this.redisTemplate = redisProvider.getIfAvailable();
-        this.redisEnabled = redisEnabled && this.redisTemplate != null;
-        this.enabled = enabled;
-        this.trustForwardedHeaders = trustForwardedHeaders;
-        this.failClosed = failClosed;
-        this.defaultIntervalMs = Math.max(defaultIntervalMs, 1L);
-        this.searchIntervalMs = Math.max(searchIntervalMs, 1L);
-        this.treeIntervalMs = Math.max(treeIntervalMs, 1L);
+        this.redisEnabled = cacheProperties.redisEnabled() && this.redisTemplate != null;
+        this.enabled = rateLimitProperties.enabled();
+        this.trustForwardedHeaders = rateLimitProperties.trustForwardedHeaders();
+        this.failClosed = rateLimitProperties.failClosed();
+        this.defaultIntervalMs = rateLimitProperties.resolvedDefaultIntervalMs();
+        this.searchIntervalMs = rateLimitProperties.resolvedSearchIntervalMs();
+        this.treeIntervalMs = rateLimitProperties.resolvedTreeIntervalMs();
     }
 
     @Override
@@ -118,31 +99,33 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         String uri = request.getRequestURI();
-        String bucket;
-        long intervalMs;
-        if (isPath(uri, TOKEN_ISSUE_PATH)) {
-            bucket = "issue";
-            intervalMs = defaultIntervalMs;
-        } else if (isPath(uri, TREE_PATH)) {
-            bucket = "tree";
-            intervalMs = treeIntervalMs;
-        } else if (isPath(uri, SEARCH_PATH)) {
-            // 搜索直打 DB、无三级缓存，独立桶按 IP 限流（默认 1qps）
-            bucket = "search";
-            intervalMs = searchIntervalMs;
-        } else {
-            bucket = "default";
-            intervalMs = defaultIntervalMs;
-        }
+        LimitBucket limit = resolveBucket(uri);
         String ip = resolveClientIp(request, trustForwardedHeaders);
-        String limitKey = ip + ":" + bucket;
+        String limitKey = ip + ":" + limit.name();
 
-        if (!tryAcquire(limitKey, intervalMs)) {
-            log.warn("geo rate limited, ip={}, uri={}, bucket={}, intervalMs={}", ip, uri, bucket, intervalMs);
+        if (!tryAcquire(limitKey, limit.intervalMs())) {
+            log.warn("geo rate limited, ip={}, uri={}, bucket={}, intervalMs={}",
+                    ip, uri, limit.name(), limit.intervalMs());
             writeLimited(response);
             return;
         }
         filterChain.doFilter(request, response);
+    }
+
+    private LimitBucket resolveBucket(String uri) {
+        if (isPath(uri, TOKEN_ISSUE_PATH)) {
+            return new LimitBucket("issue", defaultIntervalMs);
+        }
+        if (isPath(uri, TREE_PATH)) {
+            return new LimitBucket("tree", treeIntervalMs);
+        }
+        if (isPath(uri, SEARCH_PATH)) {
+            return new LimitBucket("search", searchIntervalMs);
+        }
+        return new LimitBucket("default", defaultIntervalMs);
+    }
+
+    private record LimitBucket(String name, long intervalMs) {
     }
 
     private static boolean isPath(String uri, String canonical) {

@@ -1,5 +1,7 @@
 package com.caopan.platform.config;
 
+import com.caopan.platform.config.GeoRateLimitProperties;
+import com.caopan.platform.geo.cache.GeoCacheProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.BeforeEach;
@@ -127,9 +129,12 @@ class GeoIpRateLimitFilterTest {
     @Test
     void shouldNotFilter_whenDisabledOrNonGeo() {
         when(redisProvider.getIfAvailable()).thenReturn(null);
+        GeoCacheProperties cache = new GeoCacheProperties(
+                true, 10_000L, 10L, 24L, 24L, 24L, 24L, 12L, 0L, 30L, 20_000, 4);
+        GeoRateLimitProperties disabledRate = new GeoRateLimitProperties(
+                false, false, false, 1000L, 1000L, 2000L);
         GeoIpRateLimitFilter disabled = new GeoIpRateLimitFilter(
-                new ObjectMapper(), messageSource, redisProvider,
-                true, false, false, false, 1000, 1000, 2000);
+                new ObjectMapper(), messageSource, redisProvider, cache, disabledRate);
         assertTrue(disabled.shouldNotFilter(geoRequest("/api/geo/v1/countries")));
 
         GeoIpRateLimitFilter enabled = newFilter(false, false);
@@ -164,17 +169,16 @@ class GeoIpRateLimitFilterTest {
     }
 
     private GeoIpRateLimitFilter newFilter(boolean redisEnabled, boolean failClosed) {
+        GeoCacheProperties cache = new GeoCacheProperties(
+                redisEnabled, 10_000L, 10L, 24L, 24L, 24L, 24L, 12L, 0L, 30L, 20_000, 4);
+        GeoRateLimitProperties rate = new GeoRateLimitProperties(
+                true, false, failClosed, 1000L, 1000L, 2000L);
         return new GeoIpRateLimitFilter(
                 new ObjectMapper(),
                 messageSource,
                 redisProvider,
-                redisEnabled,
-                true,
-                false,
-                failClosed,
-                1000L,
-                1000L,
-                2000L);
+                cache,
+                rate);
     }
 
     private static MockHttpServletRequest geoRequest(String uri) {

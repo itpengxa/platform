@@ -8,12 +8,9 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Expiry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
-
-import java.util.concurrent.TimeUnit;
 
 /**
  * 三级缓存装配（GEO-001 / platform-bootstrap）。
@@ -22,23 +19,16 @@ import java.util.concurrent.TimeUnit;
  * Redis 不可用或关闭时降级 L1+DB。</p>
  */
 @Configuration
-@EnableConfigurationProperties(GeoCacheProperties.class)
 public class CacheConfig {
 
     private static final Logger log = LoggerFactory.getLogger(CacheConfig.class);
 
-    /**
-     * L1 本地缓存 Bean（可变过期：负缓存短 TTL，正缓存长 TTL）。
-     *
-     * @param props 缓存配置
-     * @return Caffeine Cache
-     */
     @Bean
     public Cache<String, Object> geoLocalCache(GeoCacheProperties props) {
-        long positiveNanos = TimeUnit.MINUTES.toNanos(Math.max(props.getL1TtlMinutes(), 1L));
-        long negativeNanos = TimeUnit.SECONDS.toNanos(Math.max(props.getNegativeTtlSeconds(), 1L));
+        long positiveNanos = props.l1Ttl().toNanos();
+        long negativeNanos = props.negativeTtl().toNanos();
         return Caffeine.newBuilder()
-                .maximumSize(Math.max(props.getL1MaximumSize(), 100L))
+                .maximumSize(Math.max(props.l1MaximumSize(), 100L))
                 .expireAfter(new Expiry<String, Object>() {
                     @Override
                     public long expireAfterCreate(String key, Object value, long currentTime) {
@@ -59,15 +49,6 @@ public class CacheConfig {
                 .build();
     }
 
-    /**
-     * 三级缓存门面 Bean。
-     *
-     * @param geoLocalCache  L1
-     * @param objectMapper   JSON
-     * @param props          TTL/开关
-     * @param redisProvider  可选 Redis
-     * @return TieredCache
-     */
     @Bean
     public TieredCache tieredCache(
             Cache<String, Object> geoLocalCache,
@@ -75,13 +56,13 @@ public class CacheConfig {
             GeoCacheProperties props,
             org.springframework.beans.factory.ObjectProvider<StringRedisTemplate> redisProvider) {
         StringRedisTemplate redis = redisProvider.getIfAvailable();
-        boolean useRedis = props.isRedisEnabled() && redis != null;
+        boolean useRedis = props.redisEnabled() && redis != null;
         if (!useRedis) {
             log.warn("TieredCache Redis L2 disabled, fallback L1+DB only");
         } else {
             log.info("TieredCache enabled: L1=Caffeine(max={}, ttl={}m, neg={}s), L2=Redis(jitter={}s), L3=DB",
-                    props.getL1MaximumSize(), props.getL1TtlMinutes(),
-                    props.getNegativeTtlSeconds(), props.getJitterSeconds());
+                    props.l1MaximumSize(), props.l1TtlMinutes(),
+                    props.negativeTtlSeconds(), props.jitterSeconds());
         }
         return new TieredCache(geoLocalCache, redis, objectMapper, useRedis, props.negativeTtl());
     }

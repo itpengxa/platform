@@ -37,7 +37,7 @@ platform:
       jitter-seconds: 120
       # 本地联调：允许更深树 / 更大结果，方便验证；online 仍用 application.yml 严格值
       tree-country-max-depth: 5
-      tree-max-rows: 50000
+      tree-max-rows: 500000
     rate-limit:
       # 本地联调/前端轮询易触发 1qps；test 放宽。online 仍用 application.yml/online 严格值
       # 独立开关：设 false 可完全关闭限流

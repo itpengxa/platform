@@ -3,6 +3,8 @@ package com.caopan.platform.geo.access;
 import com.caopan.platform.common.auth.CallerContext;
 import com.caopan.platform.common.exception.BizException;
 import com.caopan.platform.common.exception.ErrorCode;
+import com.caopan.platform.geo.cache.GeoCacheProperties;
+import com.caopan.platform.geo.config.GeoAuthProperties;
 import com.caopan.platform.geo.entity.PlatformAccessClient;
 import com.caopan.platform.geo.entity.PlatformAccessToken;
 import com.caopan.platform.geo.mapper.PlatformAccessClientMapper;
@@ -51,19 +53,14 @@ class AccessTokenServiceTest {
         when(redisProvider.getIfAvailable()).thenReturn(null);
         TransactionStatus status = mock(TransactionStatus.class);
         lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class))).thenReturn(status);
+        GeoCacheProperties cache = new GeoCacheProperties(
+                false, 10_000L, 10L, 24L, 24L, 24L, 24L, 12L, 0L, 30L, 20_000, 4);
+        GeoAuthProperties auth = new GeoAuthProperties(
+                false, "", true,
+                "platform:auth:issue-lock:", "platform:auth:valid:",
+                60L, 8, 50L, 365L);
         service = new AccessTokenService(
-                clientMapper,
-                tokenMapper,
-                redisProvider,
-                transactionManager,
-                false,
-                true,
-                "platform:auth:issue-lock:",
-                "platform:auth:valid:",
-                60,
-                8,
-                50,
-                365);
+                clientMapper, tokenMapper, redisProvider, transactionManager, cache, auth);
     }
 
     @Test
@@ -82,29 +79,25 @@ class AccessTokenServiceTest {
         }).when(tokenMapper).insert(any(PlatformAccessToken.class));
 
         AccessTokenService.IssuedToken issued = service.issue("crm", "CRM");
-        assertEquals("crm", issued.getClientCode());
-        assertNotNull(issued.getToken());
-        assertTrue(issued.getToken().length() >= 32);
+        assertEquals("crm", issued.clientCode());
+        assertNotNull(issued.token());
+        assertTrue(issued.token().length() >= 32);
         verify(tokenMapper).revokeActiveByClientId(10L);
 
         ArgumentCaptor<PlatformAccessToken> cap = ArgumentCaptor.forClass(PlatformAccessToken.class);
         verify(tokenMapper).insert(cap.capture());
-        assertEquals(AccessTokenService.sha256Hex(issued.getToken()), cap.getValue().getTokenHash());
+        assertEquals(AccessTokenService.sha256Hex(issued.token()), cap.getValue().getTokenHash());
     }
 
     @Test
     void parse_validToken_returnsCaller() {
         String plain = "abcdefghijklmnopqrstuvwxyz012345";
         String hash = AccessTokenService.sha256Hex(plain);
-        TokenCallerRow row = new TokenCallerRow();
-        row.setTokenId(1L);
-        row.setClientId(2L);
-        row.setClientCode("crm");
-        when(tokenMapper.findActiveCallerByHash(hash)).thenReturn(row);
+        when(tokenMapper.findActiveCallerByHash(hash)).thenReturn(new TokenCallerRow(1L, 2L, "crm"));
 
         CallerContext ctx = service.parse(plain);
-        assertEquals("crm", ctx.getClientCode());
-        assertEquals(2L, ctx.getClientId());
+        assertEquals("crm", ctx.clientCode());
+        assertEquals(2L, ctx.clientId());
     }
 
     @Test

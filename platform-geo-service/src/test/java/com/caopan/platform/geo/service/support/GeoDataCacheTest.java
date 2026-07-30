@@ -47,10 +47,8 @@ class GeoDataCacheTest {
                 new ObjectMapper(),
                 false,
                 Duration.ofSeconds(30));
-        GeoCacheProperties props = new GeoCacheProperties();
-        props.setJitterSeconds(0);
-        props.setTreeMaxRows(100);
-        props.setTreeCountryMaxDepth(4);
+        GeoCacheProperties props = new GeoCacheProperties(
+                true, 10_000L, 10L, 24L, 24L, 24L, 24L, 12L, 0L, 30L, 100, 4);
         geoDataCache = new GeoDataCache(geoCountryMapper, geoRegionMapper, tieredCache, props);
     }
 

@@ -39,7 +39,7 @@ platform:
     cache:
       redis-enabled: true
       jitter-seconds: 600
-      tree-max-rows: 20000
+      tree-max-rows: 200000
       tree-country-max-depth: 4
     rate-limit:
       enabled: true

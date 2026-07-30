@@ -102,7 +102,7 @@ header h1{font-size:15px;font-weight:600;color:#f0f6fc;white-space:nowrap}
       <span>🌳 树状展开</span>
       <span style="flex:1"></span>
       <select id="depthSelect" onchange="refreshTree()" title="预加载层级">
-        <option value="2">2级</option><option value="3">3级</option><option value="4" selected>4级</option><option value="5">5级</option>
+        <option value="2">2级</option><option value="3" selected>3级</option><option value="4">4级</option><option value="5">5级</option>
       </select>
       <button type="button" onclick="refreshTree()" title="重新请求树接口">🔄</button>
     </div>
@@ -375,7 +375,7 @@ onCascade=function(level){
   origOnCascade(level);
   if(level===0){
     const sel=document.getElementById('sel-0');const v=sel.value;
-    if(v){const m=countryMeta[parseInt(v,10)];if(m)onCountryChange(m.iso2,parseInt(v,10));}
+    if(v){const m=countryMeta[parseInt(v,10)];if(m)onCountryChange(m.iso2);}
   }
 };
 </script>

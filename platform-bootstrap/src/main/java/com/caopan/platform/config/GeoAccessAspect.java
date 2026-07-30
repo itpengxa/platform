@@ -6,15 +6,17 @@ import com.caopan.platform.common.exception.BizException;
 import com.caopan.platform.common.exception.ErrorCode;
 import com.caopan.platform.geo.access.AccessTokenService;
 import com.caopan.platform.geo.access.ApiAccessStatRecorder;
+import com.caopan.platform.geo.config.GeoAccessLogProperties;
+import com.caopan.platform.geo.config.GeoAuthProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -22,20 +24,11 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
- * Geo Controller 访问切面（GEO-001 / platform-bootstrap）。
- * <p>职责：
- * <ol>
- *   <li>DB Token 解析（{@code platform.geo.auth.enabled=true} 时同步查库，失败抛 UNAUTHORIZED → HTTP 401）</li>
- *   <li>虚拟线程异步打印 Controller 入参（info 日志文件）</li>
- *   <li>虚拟线程异步打印异常（BizException→warn，其它→error 日志文件）</li>
- *   <li>虚拟线程异步写调用统计（应用/时间/接口/参数/成败；BizException 算失败）</li>
- * </ol>
- * 不切 {@code TokenIssueController}（位于 {@code geo.auth}，不在 {@code geo.controller} 切点）。
- * 限流仍由 {@link GeoIpRateLimitFilter} 独立开关控制。</p>
+ * Geo Controller 访问切面：鉴权 + 虚拟线程异步入参/异常/统计。
  */
 @Aspect
 @Component
@@ -48,48 +41,22 @@ public class GeoAccessAspect {
     private final AccessTokenService accessTokenService;
     private final ApiAccessStatRecorder statRecorder;
     private final ObjectMapper objectMapper;
-    /** 鉴权独立开关 */
-    private final boolean authEnabled;
-    /** 是否异步打印入参 */
-    private final boolean argsLogEnabled;
-    /** 是否异步打印异常 */
-    private final boolean exceptionLogEnabled;
-    /** 入参快照最大长度 */
-    private final int paramsMaxLength;
+    private final GeoAuthProperties authProperties;
+    private final GeoAccessLogProperties accessLogProperties;
 
-    /**
-     * @param accessTokenService    Token 解析服务
-     * @param statRecorder          调用统计落库
-     * @param objectMapper          入参序列化
-     * @param authEnabled           {@code platform.geo.auth.enabled}
-     * @param argsLogEnabled        {@code platform.geo.access-log.args-enabled}
-     * @param exceptionLogEnabled   {@code platform.geo.access-log.exception-enabled}
-     * @param paramsMaxLength       {@code platform.geo.access-log.params-max-length}
-     */
     public GeoAccessAspect(
             AccessTokenService accessTokenService,
             ApiAccessStatRecorder statRecorder,
             ObjectMapper objectMapper,
-            @Value("${platform.geo.auth.enabled:false}") boolean authEnabled,
-            @Value("${platform.geo.access-log.args-enabled:true}") boolean argsLogEnabled,
-            @Value("${platform.geo.access-log.exception-enabled:true}") boolean exceptionLogEnabled,
-            @Value("${platform.geo.access-log.params-max-length:2048}") int paramsMaxLength) {
+            GeoAuthProperties authProperties,
+            GeoAccessLogProperties accessLogProperties) {
         this.accessTokenService = accessTokenService;
         this.statRecorder = statRecorder;
         this.objectMapper = objectMapper;
-        this.authEnabled = authEnabled;
-        this.argsLogEnabled = argsLogEnabled;
-        this.exceptionLogEnabled = exceptionLogEnabled;
-        this.paramsMaxLength = Math.max(paramsMaxLength, 64);
+        this.authProperties = authProperties;
+        this.accessLogProperties = accessLogProperties;
     }
 
-    /**
-     * 环绕 geo.controller 下全部 RestController 方法。
-     *
-     * @param pjp 连接点
-     * @return 业务方法返回值
-     * @throws Throwable 业务或鉴权异常原样抛出（由 GlobalExceptionHandler 转 Result）
-     */
     @Around("within(com.caopan.platform.geo.controller..*) && @within(org.springframework.web.bind.annotation.RestController)")
     public Object aroundGeoController(ProceedingJoinPoint pjp) throws Throwable {
         long startNs = System.nanoTime();
@@ -102,11 +69,9 @@ public class GeoAccessAspect {
         Throwable error = null;
 
         try {
-            if (authEnabled) {
-                caller = accessTokenService.parse(resolveToken(request));
-            } else {
-                caller = CallerContext.anonymous();
-            }
+            caller = authProperties.enabled()
+                    ? accessTokenService.parse(resolveToken(request))
+                    : CallerContext.anonymous();
             CallerContextHolder.set(caller);
             Object result = pjp.proceed();
             success = true;
@@ -114,7 +79,7 @@ public class GeoAccessAspect {
         } catch (Throwable t) {
             error = t;
             success = false;
-            if (exceptionLogEnabled) {
+            if (accessLogProperties.exceptionEnabled()) {
                 final CallerContext c = caller;
                 final String api = apiKey;
                 Thread.startVirtualThread(() -> logException(c, api, t));
@@ -129,12 +94,13 @@ public class GeoAccessAspect {
             final String params = paramsSnapshot;
             final String api = apiKey;
             final LocalDateTime at = calledAt;
+            final boolean argsEnabled = accessLogProperties.argsEnabled();
             Thread.startVirtualThread(() -> {
-                if (argsLogEnabled) {
-                    log.info("geo api args, client={}, api={}, params={}", c.getClientCode(), api, params);
+                if (argsEnabled) {
+                    log.info("geo api args, client={}, api={}, params={}", c.clientCode(), api, params);
                 }
                 statRecorder.record(
-                        c.getClientCode(),
+                        c.clientCode(),
                         at,
                         api,
                         params,
@@ -145,75 +111,52 @@ public class GeoAccessAspect {
         }
     }
 
-    /**
-     * 按异常类型选择 warn / error 日志（走分文件 appender）。
-     */
     private static void logException(CallerContext caller, String apiKey, Throwable t) {
-        String client = caller == null ? "anonymous" : caller.getClientCode();
-        if (t instanceof BizException biz && biz.getCode() == ErrorCode.UNAUTHORIZED.getCode()) {
-            log.warn("geo api unauthorized, client={}, api={}", client, apiKey);
-            return;
+        String client = caller == null ? "anonymous" : caller.clientCode();
+        switch (t) {
+            case BizException biz when biz.getCode() == ErrorCode.UNAUTHORIZED.getCode() ->
+                    log.warn("geo api unauthorized, client={}, api={}", client, apiKey);
+            case BizException biz ->
+                    log.warn("geo api biz error, client={}, api={}, type={}, msg={}",
+                            client, apiKey, biz.getClass().getSimpleName(), biz.getMessage());
+            default -> log.error("geo api exception, client={}, api={}", client, apiKey, t);
         }
-        if (t instanceof BizException) {
-            log.warn("geo api biz error, client={}, api={}, type={}, msg={}",
-                    client, apiKey, t.getClass().getSimpleName(), t.getMessage());
-            return;
-        }
-        log.error("geo api exception, client={}, api={}", client, apiKey, t);
     }
 
-    /**
-     * 序列化方法入参为短字符串（跳过 Servlet 对象，禁止依赖 Token 明文）。
-     */
     private String buildParamsSnapshot(ProceedingJoinPoint pjp) {
+        int maxLen = accessLogProperties.resolvedParamsMaxLength();
         try {
             Object[] args = pjp.getArgs();
             MethodSignature sig = (MethodSignature) pjp.getSignature();
             String[] names = sig.getParameterNames();
-            List<String> parts = new ArrayList<>();
-            for (int i = 0; i < args.length; i++) {
-                Object arg = args[i];
-                if (arg instanceof HttpServletRequest || arg instanceof jakarta.servlet.http.HttpServletResponse) {
-                    continue;
-                }
-                String name = names != null && i < names.length ? names[i] : ("arg" + i);
-                String value;
-                try {
-                    value = objectMapper.writeValueAsString(arg);
-                } catch (Exception e) {
-                    value = String.valueOf(arg);
-                }
-                parts.add(name + "=" + value);
-            }
-            String joined = String.join(", ", parts);
-            if (joined.length() > paramsMaxLength) {
-                return joined.substring(0, paramsMaxLength);
-            }
-            return joined;
+            String joined = IntStream.range(0, args.length)
+                    .filter(i -> !(args[i] instanceof HttpServletRequest
+                            || args[i] instanceof HttpServletResponse))
+                    .mapToObj(i -> {
+                        String name = names != null && i < names.length ? names[i] : ("arg" + i);
+                        String value;
+                        try {
+                            value = objectMapper.writeValueAsString(args[i]);
+                        } catch (Exception e) {
+                            value = String.valueOf(args[i]);
+                        }
+                        return name + "=" + value;
+                    })
+                    .collect(Collectors.joining(", "));
+            return joined.length() > maxLen ? joined.substring(0, maxLen) : joined;
         } catch (Exception e) {
             return "<unserializable>";
         }
     }
 
-    /**
-     * 统计用接口键：优先 {@code METHOD URI}，无 request 时退化为类名#方法名。
-     */
     private static String resolveApiKey(HttpServletRequest request, ProceedingJoinPoint pjp) {
         if (request != null) {
-            String method = request.getMethod();
-            String uri = request.getRequestURI();
-            return method + " " + uri;
+            return request.getMethod() + " " + request.getRequestURI();
         }
         MethodSignature sig = (MethodSignature) pjp.getSignature();
         return "INVOKE " + sig.getDeclaringTypeName() + "#" + sig.getMethod().getName();
     }
 
-    /**
-     * 从 Header 提取 Token：优先 {@code X-Platform-Token}，其次 {@code Authorization: Bearer}。
-     *
-     * @param request HTTP 请求，可为 null
-     * @return 明文 Token 或 null
-     */
     private static String resolveToken(HttpServletRequest request) {
         if (request == null) {
             return null;
@@ -229,10 +172,10 @@ public class GeoAccessAspect {
         return null;
     }
 
-    /** @return 当前请求，非 Web 线程时 null */
     private static HttpServletRequest currentRequest() {
-        ServletRequestAttributes attrs =
-                (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-        return attrs == null ? null : attrs.getRequest();
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attrs) {
+            return attrs.getRequest();
+        }
+        return null;
     }
 }

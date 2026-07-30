@@ -3,6 +3,8 @@ package com.caopan.platform.geo.access;
 import com.caopan.platform.common.auth.CallerContext;
 import com.caopan.platform.common.exception.BizException;
 import com.caopan.platform.common.exception.ErrorCode;
+import com.caopan.platform.geo.cache.GeoCacheProperties;
+import com.caopan.platform.geo.config.GeoAuthProperties;
 import com.caopan.platform.geo.entity.PlatformAccessClient;
 import com.caopan.platform.geo.entity.PlatformAccessToken;
 import com.caopan.platform.geo.mapper.PlatformAccessClientMapper;
@@ -10,7 +12,6 @@ import com.caopan.platform.geo.mapper.PlatformAccessTokenMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -26,6 +27,7 @@ import java.util.Base64;
 import java.util.Collections;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
@@ -46,49 +48,32 @@ public class AccessTokenService {
     private final AccessTokenRedisSupport redisSupport;
     private final TransactionTemplate transactionTemplate;
 
-    /**
-     * @param clientMapper            接入方 Mapper
-     * @param tokenMapper             Token Mapper
-     * @param redisProvider           可选 Redis
-     * @param transactionManager      事务管理器（编程式事务，缩小 Redis 锁持有范围）
-     * @param cacheRedisEnabled       {@code platform.geo.cache.redis-enabled}
-     * @param redisTokenSyncEnabled   {@code platform.geo.auth.redis-token-sync-enabled}
-     * @param issueLockPrefix         Issue 锁 key 前缀
-     * @param validKeyPrefix          valid 标记 key 前缀
-     * @param issueLockSeconds        锁 TTL 秒
-     * @param issueLockRetryTimes     抢锁重试次数
-     * @param issueLockRetryMs        抢锁重试间隔毫秒
-     * @param validTtlDays            valid key TTL 天
-     */
     public AccessTokenService(
             PlatformAccessClientMapper clientMapper,
             PlatformAccessTokenMapper tokenMapper,
             ObjectProvider<StringRedisTemplate> redisProvider,
             PlatformTransactionManager transactionManager,
-            @Value("${platform.geo.cache.redis-enabled:true}") boolean cacheRedisEnabled,
-            @Value("${platform.geo.auth.redis-token-sync-enabled:true}") boolean redisTokenSyncEnabled,
-            @Value("${platform.geo.auth.issue-lock-key-prefix:platform:auth:issue-lock:}") String issueLockPrefix,
-            @Value("${platform.geo.auth.valid-key-prefix:platform:auth:valid:}") String validKeyPrefix,
-            @Value("${platform.geo.auth.issue-lock-seconds:60}") long issueLockSeconds,
-            @Value("${platform.geo.auth.issue-lock-retry-times:8}") int issueLockRetryTimes,
-            @Value("${platform.geo.auth.issue-lock-retry-ms:50}") long issueLockRetryMs,
-            @Value("${platform.geo.auth.valid-ttl-days:365}") long validTtlDays) {
+            GeoCacheProperties cacheProperties,
+            GeoAuthProperties authProperties) {
         this.clientMapper = clientMapper;
         this.tokenMapper = tokenMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         StringRedisTemplate redis = redisProvider.getIfAvailable();
-        if (cacheRedisEnabled && redisTokenSyncEnabled && redis != null) {
+        boolean sync = cacheProperties.redisEnabled()
+                && authProperties.redisTokenSyncEnabled()
+                && redis != null;
+        if (sync) {
             this.redisSupport = new AccessTokenRedisSupport(
                     redis,
-                    issueLockPrefix,
-                    validKeyPrefix,
-                    issueLockSeconds,
-                    issueLockRetryTimes,
-                    issueLockRetryMs,
-                    Duration.ofDays(Math.max(validTtlDays, 1L)));
+                    authProperties.issueLockKeyPrefix(),
+                    authProperties.validKeyPrefix(),
+                    authProperties.issueLockSeconds(),
+                    authProperties.issueLockRetryTimes(),
+                    authProperties.issueLockRetryMs(),
+                    Duration.ofDays(Math.max(authProperties.validTtlDays(), 1L)));
         } else {
             this.redisSupport = null;
-            if (redisTokenSyncEnabled && cacheRedisEnabled) {
+            if (authProperties.redisTokenSyncEnabled() && cacheProperties.redisEnabled()) {
                 log.warn("platform.geo.auth.redis-token-sync-enabled but Redis unavailable — token sync disabled");
             }
         }
@@ -128,7 +113,7 @@ public class AccessTokenService {
             client.setUpdatedAt(now);
             clientMapper.insert(client);
         } else {
-            if (client.getStatus() == null || client.getStatus() != 1) {
+            if (!Objects.equals(client.getStatus(), 1)) {
                 throw new BizException(ErrorCode.PARAM_INVALID);
             }
             if (StringUtils.hasText(clientName) && !clientName.trim().equals(client.getClientName())) {
@@ -140,7 +125,7 @@ public class AccessTokenService {
 
         List<String> oldHashes = tokenMapper.listActiveTokenHashesByClientId(client.getId());
         if (oldHashes == null) {
-            oldHashes = Collections.emptyList();
+            oldHashes = List.of();
         }
         tokenMapper.revokeActiveByClientId(client.getId());
 
@@ -167,17 +152,15 @@ public class AccessTokenService {
 
     /**
      * 解析：以 DB 为权威；库内无效 → 401 并清理 Redis；库内有效 → 回填/刷新 Redis valid（带 TTL）。
-     * Redis valid 用于多实例吊销后的辅助加速，不作「仅 Redis miss 即拒绝」的门闩（避免 Redis 闪断误杀）。
      */
     public CallerContext parse(String rawToken) {
         if (!StringUtils.hasText(rawToken)) {
             throw new BizException(ErrorCode.UNAUTHORIZED);
         }
-        String token = rawToken.trim();
-        String hash = sha256Hex(token);
+        String hash = sha256Hex(rawToken.trim());
 
         TokenCallerRow row = tokenMapper.findActiveCallerByHash(hash);
-        if (row == null || !StringUtils.hasText(row.getClientCode())) {
+        if (row == null || !StringUtils.hasText(row.clientCode())) {
             if (redisSupport != null) {
                 redisSupport.revokeValid(Collections.singletonList(hash));
             }
@@ -185,10 +168,9 @@ public class AccessTokenService {
         }
 
         if (redisSupport != null) {
-            // 刷新 TTL；吊销场景已在 DB status 失效，上面分支清理 Redis
             redisSupport.markValid(hash);
         }
-        return new CallerContext(row.getClientId(), row.getClientCode(), row.getTokenId());
+        return new CallerContext(row.clientId(), row.clientCode(), row.tokenId());
     }
 
     private static String normalizeClientCode(String clientCode) {
@@ -211,26 +193,24 @@ public class AccessTokenService {
     static String sha256Hex(String plain) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] dig = md.digest(plain.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(dig);
+            return HexFormat.of().formatHex(md.digest(plain.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception e) {
             throw new IllegalStateException("SHA-256 unavailable", e);
         }
     }
 
-    public static final class IssuedToken {
-        private final String clientCode;
-        private final String token;
-        private final String tokenPrefix;
-
-        public IssuedToken(String clientCode, String token, String tokenPrefix) {
-            this.clientCode = clientCode;
-            this.token = token;
-            this.tokenPrefix = tokenPrefix;
+    /** 签发结果（明文 token 仅此一次出现）。 */
+    public record IssuedToken(String clientCode, String token, String tokenPrefix) {
+        public String getClientCode() {
+            return clientCode;
         }
 
-        public String getClientCode() { return clientCode; }
-        public String getToken() { return token; }
-        public String getTokenPrefix() { return tokenPrefix; }
+        public String getToken() {
+            return token;
+        }
+
+        public String getTokenPrefix() {
+            return tokenPrefix;
+        }
     }
 }
