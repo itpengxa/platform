@@ -1,6 +1,5 @@
 package com.caopan.platform.config;
 
-import com.caopan.platform.geo.config.GeoAuthProperties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -21,37 +20,38 @@ class GeoAuthStartupGuardTest {
     @Test
     void authDisabled_allowsStart() {
         when(environment.getActiveProfiles()).thenReturn(new String[]{"test"});
-        GeoAuthStartupGuard guard = new GeoAuthStartupGuard(environment, auth(false, ""));
+        GeoAuthStartupGuard guard = new GeoAuthStartupGuard(environment, false, "");
         assertDoesNotThrow(() -> guard.run(new DefaultApplicationArguments()));
     }
 
     @Test
     void authDisabled_onlineProfile_rejects() {
         when(environment.getActiveProfiles()).thenReturn(new String[]{"online"});
-        GeoAuthStartupGuard guard = new GeoAuthStartupGuard(environment, auth(false, ""));
+        GeoAuthStartupGuard guard = new GeoAuthStartupGuard(environment, false, "");
         assertThrows(IllegalStateException.class,
                 () -> guard.run(new DefaultApplicationArguments()));
     }
 
     @Test
-    void authEnabled_onlineWithoutIssueSecret_rejects() {
+    void authEnabled_online_emptySecret_rejects() {
         when(environment.getActiveProfiles()).thenReturn(new String[]{"online"});
-        GeoAuthStartupGuard guard = new GeoAuthStartupGuard(environment, auth(true, ""));
+        GeoAuthStartupGuard guard = new GeoAuthStartupGuard(environment, true, "");
         assertThrows(IllegalStateException.class,
                 () -> guard.run(new DefaultApplicationArguments()));
     }
 
     @Test
-    void authEnabled_onlineWithIssueSecret_allows() {
+    void authEnabled_online_weakSecret_rejects() {
         when(environment.getActiveProfiles()).thenReturn(new String[]{"online"});
-        GeoAuthStartupGuard guard = new GeoAuthStartupGuard(environment, auth(true, "secret"));
+        GeoAuthStartupGuard guard = new GeoAuthStartupGuard(environment, true, "local-dev-issue-secret");
+        assertThrows(IllegalStateException.class,
+                () -> guard.run(new DefaultApplicationArguments()));
+    }
+
+    @Test
+    void authEnabled_online_strongSecret_allows() {
+        when(environment.getActiveProfiles()).thenReturn(new String[]{"online"});
+        GeoAuthStartupGuard guard = new GeoAuthStartupGuard(environment, true, "prod-issue-secret-9f3a");
         assertDoesNotThrow(() -> guard.run(new DefaultApplicationArguments()));
-    }
-
-    private static GeoAuthProperties auth(boolean enabled, String issueSecret) {
-        return new GeoAuthProperties(
-                enabled, issueSecret, true,
-                "platform:auth:issue-lock:", "platform:auth:valid:",
-                60L, 8, 50L, 365L);
     }
 }

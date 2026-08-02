@@ -1,15 +1,13 @@
 package com.caopan.platform.config;
 
-import com.caopan.platform.geo.config.GeoAuthProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
-
-import java.util.Arrays;
 
 /**
  * 鉴权启动门禁（GEO-001 / platform-bootstrap）。
@@ -22,20 +20,44 @@ public class GeoAuthStartupGuard implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(GeoAuthStartupGuard.class);
 
     private final Environment environment;
-    private final GeoAuthProperties authProperties;
+    /** 鉴权独立开关 */
+    private final boolean authEnabled;
+    /** 签发密钥 */
+    private final String issueSecret;
 
-    public GeoAuthStartupGuard(Environment environment, GeoAuthProperties authProperties) {
+    /**
+     * @param environment  用于识别 active profiles（test/online/prod）
+     * @param authEnabled  {@code platform.geo.auth.enabled}
+     * @param issueSecret  {@code platform.geo.auth.issue-secret}
+     */
+    public GeoAuthStartupGuard(
+            Environment environment,
+            @Value("${platform.geo.auth.enabled:false}") boolean authEnabled,
+            @Value("${platform.geo.auth.issue-secret:}") String issueSecret) {
         this.environment = environment;
-        this.authProperties = authProperties;
+        this.authEnabled = authEnabled;
+        this.issueSecret = issueSecret == null ? "" : issueSecret.trim();
     }
 
+    /**
+     * 启动后校验：online/prod 必须开启鉴权，且配置 Issue Secret。
+     *
+     * @param args 启动参数
+     * @throws IllegalStateException online/prod 配置不合规
+     */
     @Override
     public void run(ApplicationArguments args) {
-        boolean onlineLike = Arrays.stream(environment.getActiveProfiles())
-                .anyMatch(p -> "online".equalsIgnoreCase(p) || "prod".equalsIgnoreCase(p));
-        String issueSecret = authProperties.normalizedIssueSecret();
-
-        if (!authProperties.enabled()) {
+        boolean onlineLike = false;
+        String[] profiles = environment.getActiveProfiles();
+        if (profiles != null) {
+            for (String p : profiles) {
+                if ("online".equalsIgnoreCase(p) || "prod".equalsIgnoreCase(p)) {
+                    onlineLike = true;
+                    break;
+                }
+            }
+        }
+        if (!authEnabled) {
             if (onlineLike) {
                 throw new IllegalStateException(
                         "online/prod 环境禁止 platform.geo.auth.enabled=false，请开启鉴权并通过 /api/platform/v1/auth/token/issue 签发 Token");
@@ -45,15 +67,33 @@ public class GeoAuthStartupGuard implements ApplicationRunner {
         }
         if (onlineLike && !StringUtils.hasText(issueSecret)) {
             throw new IllegalStateException(
-                    "online/prod 必须配置 platform.geo.auth.issue-secret，并通过 Header X-Platform-Issue-Secret 签发 Token");
+                    "online/prod 必须配置 platform.geo.auth.issue-secret（环境变量 PLATFORM_GEO_ISSUE_SECRET），并通过 Header X-Platform-Issue-Secret 签发 Token");
+        }
+        if (onlineLike && isWeakIssueSecret(issueSecret)) {
+            throw new IllegalStateException(
+                    "online/prod 禁止使用弱/默认 issue-secret（如 local-dev-issue-secret），请通过 PLATFORM_GEO_ISSUE_SECRET 注入高强度密钥");
         }
         if (!StringUtils.hasText(issueSecret)) {
             log.warn("platform.geo.auth.issue-secret 未配置 — token/issue 无签发密钥校验（仅建议本地 test）");
         } else {
             log.info("geo token issue-secret enabled");
         }
-        log.info(onlineLike
-                ? "geo DB token auth enabled for online/prod profile"
-                : "geo DB token auth enabled");
+        if (onlineLike) {
+            log.info("geo DB token auth enabled for online/prod profile");
+        } else {
+            log.info("geo DB token auth enabled");
+        }
+    }
+
+    /** 识别明显不可上线的默认/占位签发密钥。 */
+    private static boolean isWeakIssueSecret(String secret) {
+        if (!StringUtils.hasText(secret)) {
+            return true;
+        }
+        String s = secret.trim().toLowerCase();
+        return "local-dev-issue-secret".equals(s)
+                || "changeme".equals(s)
+                || "secret".equals(s)
+                || "password".equals(s);
     }
 }

@@ -36,6 +36,7 @@
         SELECT <include refid="RegionColumns"/>
         FROM geo_region
         WHERE status = 1
+          AND country_code = #{countryCode}
           AND path LIKE CONCAT(#{pathPrefix}, '%')
         <if test="maxLevel != null">
             AND level &lt;= #{maxLevel}

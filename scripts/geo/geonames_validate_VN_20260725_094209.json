@@ -1,0 +1,95 @@
+{
+  "timestamp": "2026-07-25T09:42:09.625702",
+  "total": 10,
+  "passed": 10,
+  "warned": 0,
+  "failed": 0,
+  "skipped": 0,
+  "details": {
+    "PASS": [
+      {
+        "id": 400000994,
+        "name": "Xã Châu Thới",
+        "gn_name": "Xã Châu Thới",
+        "gn_geonameid": "8341057",
+        "gn_fcode": "ADM3",
+        "distance_km": null
+      },
+      {
+        "id": 400009157,
+        "name": "Thị Trấn Nàng Mau",
+        "gn_name": "Thị Trấn Nàng Mau",
+        "gn_geonameid": "9534522",
+        "gn_fcode": "ADM3",
+        "distance_km": null
+      },
+      {
+        "id": 400002650,
+        "name": "Xã Chiềng Sại",
+        "gn_name": "Xã Chiềng Sại",
+        "gn_geonameid": "8545324",
+        "gn_fcode": "ADM3",
+        "distance_km": null
+      },
+      {
+        "id": 400005866,
+        "name": "Xã Vĩnh Lộc",
+        "gn_name": "Xã Vĩnh Lộc",
+        "gn_geonameid": "8637824",
+        "gn_fcode": "ADM3",
+        "distance_km": null
+      },
+      {
+        "id": 400004602,
+        "name": "Xã Kim Đính",
+        "gn_name": "Xã Kim Đính",
+        "gn_geonameid": "8607229",
+        "gn_fcode": "ADM3",
+        "distance_km": null
+      },
+      {
+        "id": 400001626,
+        "name": "Xã Mường Kim",
+        "gn_name": "Xã Mường Kim",
+        "gn_geonameid": "8456797",
+        "gn_fcode": "ADM3",
+        "distance_km": null
+      },
+      {
+        "id": 400005660,
+        "name": "Xã Diễn Thọ",
+        "gn_name": "Xã Diễn Thọ",
+        "gn_geonameid": "8627848",
+        "gn_fcode": "ADM3",
+        "distance_km": null
+      },
+      {
+        "id": 400005653,
+        "name": "Xã Diễn Thịnh",
+        "gn_name": "Xã Diễn Thịnh",
+        "gn_geonameid": "8627841",
+        "gn_fcode": "ADM3",
+        "distance_km": null
+      },
+      {
+        "id": 400004002,
+        "name": "Xã Minh Khai",
+        "gn_name": "Xã Minh Khai",
+        "gn_geonameid": "8569511",
+        "gn_fcode": "ADM3",
+        "distance_km": null
+      },
+      {
+        "id": 400000400,
+        "name": "Thị Trấn Tân Yên",
+        "gn_name": "Thị Trấn Tân Yên",
+        "gn_geonameid": "8309333",
+        "gn_fcode": "ADM3",
+        "distance_km": null
+      }
+    ],
+    "WARN": [],
+    "FAIL": [],
+    "SKIP": []
+  }
+}

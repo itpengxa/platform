@@ -49,12 +49,13 @@ platform:
       search-interval-ms: 1000
       tree-interval-ms: 2000
     auth:
-      enabled: false
+      # online 必须开启；未配置环境变量时启动门禁拒绝
+      enabled: true
       redis-token-sync-enabled: true
       issue-lock-seconds: 60
       valid-ttl-days: 365
-      # 生产必须通过环境变量注入，禁止默认空串
-      issue-secret: ${PLATFORM_GEO_ISSUE_SECRET:local-dev-issue-secret}
+      # 生产必须通过环境变量注入，禁止回落到本地默认密钥
+      issue-secret: ${PLATFORM_GEO_ISSUE_SECRET:}
     access-log:
       args-enabled: true
       exception-enabled: true

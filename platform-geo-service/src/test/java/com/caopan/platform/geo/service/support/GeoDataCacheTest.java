@@ -88,20 +88,20 @@ class GeoDataCacheTest {
     void loadTreeNodes_countryRootCapsDepthAndLoads() {
         GeoRegion root = region(1L, 1, "VN", "/1/");
         when(geoRegionMapper.findCountryByCode("VN")).thenReturn(root);
-        when(geoRegionMapper.listSubtree(eq("/1/"), eq(4), eq(100)))
+        when(geoRegionMapper.listSubtree(eq("VN"), eq("/1/"), eq(4), eq(100)))
                 .thenReturn(List.of(root));
 
         // depth=5 国家级应封顶为 4，并按 depth=4 缓存键加载（maxLevel=1+4-1=4）
         GeoDataCache.TreeLoadResult result = geoDataCache.loadTreeNodes("VN", null, 5);
         assertEquals(1L, result.getRoot().getId());
-        verify(geoRegionMapper).listSubtree("/1/", 4, 100);
+        verify(geoRegionMapper).listSubtree("VN", "/1/", 4, 100);
     }
 
     @Test
     void loadTreeNodes_hitMaxRows_rejects() {
         GeoRegion root = region(1L, 1, "VN", "/1/");
         when(geoRegionMapper.findCountryByCode("VN")).thenReturn(root);
-        when(geoRegionMapper.listSubtree(anyString(), anyInt(), anyInt()))
+        when(geoRegionMapper.listSubtree(anyString(), anyString(), anyInt(), anyInt()))
                 .thenReturn(Collections.nCopies(100, root));
 
         BizException ex = assertThrows(BizException.class,
@@ -127,8 +127,7 @@ class GeoDataCacheTest {
                 () -> geoDataCache.loadTreeNodes("VN", 9L, 2));
         assertEquals(ErrorCode.REGION_NOT_FOUND.getCode(), ex.getCode());
         verify(geoRegionMapper, times(0)).findCountryByCode(anyString());
-        verify(geoRegionMapper, times(0)).listSubtree(anyString(), anyInt(), anyInt());
-        verify(geoRegionMapper, times(0)).listSubtree(anyString(), isNull(), anyInt());
+        verify(geoRegionMapper, times(0)).listSubtree(anyString(), anyString(), anyInt(), anyInt());
     }
 
     private static GeoRegion region(long id, int level, String country, String path) {

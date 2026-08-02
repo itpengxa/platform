@@ -48,7 +48,8 @@ public interface GeoRegionMapper extends BaseMapper<GeoRegion> {
      * @param maxRows    最大行数（硬限制，防大包）
      * @return 子树节点列表
      */
-    List<GeoRegion> listSubtree(@Param("pathPrefix") String pathPrefix,
+    List<GeoRegion> listSubtree(@Param("countryCode") String countryCode,
+                               @Param("pathPrefix") String pathPrefix,
                                @Param("maxLevel") Integer maxLevel,
                                @Param("maxRows") Integer maxRows);
 

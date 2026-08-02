@@ -206,7 +206,7 @@ public class GeoDataCache {
              * LIMIT=maxRows 时「刚好拉满」视为可能截断，拒绝返回半棵树。
              */
             int maxRows = cacheProperties.resolvedTreeMaxRows();
-            List<GeoRegion> nodes = geoRegionMapper.listSubtree(root.getPath(), maxLevel, maxRows);
+            List<GeoRegion> nodes = geoRegionMapper.listSubtree(code, root.getPath(), maxLevel, maxRows);
             if (nodes != null && nodes.size() >= maxRows) {
                 log.warn("tree result hit maxRows={}, countryCode={}, rootId={}, depth={}",
                         maxRows, code, rootId, depthUse);
