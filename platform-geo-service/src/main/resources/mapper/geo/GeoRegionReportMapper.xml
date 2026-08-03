@@ -70,4 +70,25 @@
         WHERE client_code = #{clientCode}
           AND created_at &gt;= #{from}
     </select>
+
+    <select id="selectForUpdate" resultType="com.caopan.platform.geo.entity.GeoRegionReport">
+        SELECT <include refid="ReportColumns"/>
+        FROM geo_region_report
+        WHERE id = #{id}
+        FOR UPDATE
+    </select>
+
+    <update id="updateStatusIf">
+        UPDATE geo_region_report
+        SET result_status = #{toStatus},
+            updated_at = #{updatedAt}
+            <if test="regionId != null">
+                , region_id = #{regionId}
+            </if>
+        WHERE id = #{id}
+          AND result_status IN
+          <foreach collection="fromStatuses" item="st" open="(" separator="," close=")">
+              #{st}
+          </foreach>
+    </update>
 </mapper>

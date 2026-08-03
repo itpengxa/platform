@@ -110,10 +110,27 @@ class AdminAuthFilterTest {
         assertFalse(AdminAuthFilter.isAdminApi("/admin/index.html"));
     }
 
+    @Test
+    void adminDisabled_rejectsApiButAllowsStatic() throws Exception {
+        AdminAuthFilter filter = newFilter("", false);
+        MockHttpServletResponse apiResp = new MockHttpServletResponse();
+        filter.doFilter(adminRequest("GET", "/admin/geo/v1/regions/page"), apiResp, filterChain);
+        assertEquals(401, apiResp.getStatus());
+        verify(filterChain, never()).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+
+        MockHttpServletResponse htmlResp = new MockHttpServletResponse();
+        filter.doFilter(adminRequest("GET", "/admin/index.html"), htmlResp, filterChain);
+        verify(filterChain).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
     private AdminAuthFilter newFilter(String secret) {
+        return newFilter(secret, true);
+    }
+
+    private AdminAuthFilter newFilter(String secret, boolean enabled) {
         EffectiveConfigRegistry registry = new EffectiveConfigRegistry();
         registry.replaceAll(Map.of(
-                "platform.geo.admin.enabled", "true",
+                "platform.geo.admin.enabled", enabled ? "true" : "false",
                 "platform.geo.admin.secret", secret == null ? "" : secret,
                 "platform.geo.admin.path-prefix", "/admin",
                 "platform.geo.admin.session-ttl-days", "7"

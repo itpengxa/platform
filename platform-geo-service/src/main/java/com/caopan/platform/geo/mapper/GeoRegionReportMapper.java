@@ -32,4 +32,18 @@ public interface GeoRegionReportMapper extends BaseMapper<GeoRegionReport> {
 
     long countRecentByClient(@Param("clientCode") String clientCode,
                              @Param("from") LocalDateTime from);
+
+    /** 审批/驳回前行锁，避免并发双入主表或状态互相覆盖。 */
+    GeoRegionReport selectForUpdate(@Param("id") Long id);
+
+    /**
+     * 条件更新状态（CAS）：仅当当前 status 落在 expectedStatuses 时成功。
+     *
+     * @return 影响行数
+     */
+    int updateStatusIf(@Param("id") Long id,
+                       @Param("fromStatuses") java.util.List<String> fromStatuses,
+                       @Param("toStatus") String toStatus,
+                       @Param("regionId") Long regionId,
+                       @Param("updatedAt") LocalDateTime updatedAt);
 }

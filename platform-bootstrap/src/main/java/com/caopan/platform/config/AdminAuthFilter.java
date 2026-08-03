@@ -58,20 +58,27 @@ public class AdminAuthFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        if (!adminSettings.enabled()) {
-            return true;
-        }
         String uri = request.getRequestURI();
         if (uri == null) {
             return true;
         }
         String prefix = adminSettings.normalizedPathPrefix();
+        // 无论 enabled 与否都进入过滤器：enabled=false 时对管理 API 闭包拒绝，避免“关开关=裸奔”
         return !uri.equals(prefix) && !uri.startsWith(prefix + "/");
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
+        if (!adminSettings.enabled()) {
+            if (isStaticAssetGet(request)) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+            log.warn("admin disabled, reject uri={}, method={}", request.getRequestURI(), request.getMethod());
+            writeUnauthorized(response);
+            return;
+        }
         if (isPublicAdminPath(request)) {
             filterChain.doFilter(request, response);
             return;

@@ -9,10 +9,13 @@ window.AdminDict = {
     GSO: 'GSO',
     CSC: 'CSC'
   },
+  esc: function (v) {
+    return (window.AdminHttp && AdminHttp.escapeHtml) ? AdminHttp.escapeHtml(v) : String(v == null ? '' : v);
+  },
   sourceTag: function (s) {
     const label = this.SOURCE_MAP[s] || s || '-';
     const cls = s === 'user_report' ? 'tag-orange' : (s === 'admin' ? 'tag-green' : 'tag-gray');
-    return '<span class="tag ' + cls + '" title="' + (s || '') + '">' + label + '</span>';
+    return '<span class="tag ' + cls + '" title="' + this.esc(s || '') + '">' + this.esc(label) + '</span>';
   },
   statusTag: function (s) {
     return s === 1
@@ -41,6 +44,6 @@ window.AdminDict = {
     };
     const cls = clsMap[s] || 'tag-gray';
     const label = this.REPORT_STATUS_MAP[s] || s || '-';
-    return '<span class="tag ' + cls + '" title="' + (s || '') + '">' + label + '</span>';
+    return '<span class="tag ' + cls + '" title="' + this.esc(s || '') + '">' + this.esc(label) + '</span>';
   }
 };

@@ -8,6 +8,7 @@ import com.caopan.platform.geo.entity.GeoRegion;
 import com.caopan.platform.geo.mapper.GeoRegionMapper;
 import com.caopan.platform.geo.service.support.GeoDataCache;
 import com.caopan.platform.geo.service.support.PathUtil;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -73,37 +74,46 @@ public class GeoAdminService {
         String name = trimRequired(req.name(), "name");
         assertNoDuplicate(req.parentId(), name, trimOptional(req.nameEn()), null);
 
-        long newId = idAllocator.allocate(level);
-        String path = parent.getPath() + newId + "/";
         LocalDateTime now = LocalDateTime.now();
+        DuplicateKeyException lastDup = null;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            long newId = idAllocator.allocate(level);
+            String path = parent.getPath() + newId + "/";
 
-        GeoRegion row = new GeoRegion();
-        row.setId(newId);
-        row.setParentId(req.parentId());
-        row.setCountryCode(parent.getCountryCode());
-        row.setName(name);
-        row.setNameEn(trimOptional(req.nameEn()));
-        row.setNameCh(trimOptional(req.nameCh()));
-        row.setCode(trimOptional(req.code()));
-        row.setLevel(level);
-        row.setRegionType(levelLabel(level));
-        row.setPath(path);
-        row.setIsLeaf(1);
-        row.setLatitude(req.latitude());
-        row.setLongitude(req.longitude());
-        row.setSource("admin");
-        row.setStatus(req.status() == null ? 1 : req.status());
-        row.setSort(req.sort() == null ? 0 : req.sort());
-        row.setCreatedAt(now);
-        row.setUpdatedAt(now);
-        geoRegionMapper.insert(row);
+            GeoRegion row = new GeoRegion();
+            row.setId(newId);
+            row.setParentId(req.parentId());
+            row.setCountryCode(parent.getCountryCode());
+            row.setName(name);
+            row.setNameEn(trimOptional(req.nameEn()));
+            row.setNameCh(trimOptional(req.nameCh()));
+            row.setCode(trimOptional(req.code()));
+            row.setLevel(level);
+            row.setRegionType(levelLabel(level));
+            row.setPath(path);
+            row.setIsLeaf(1);
+            row.setLatitude(req.latitude());
+            row.setLongitude(req.longitude());
+            row.setSource("admin");
+            row.setStatus(req.status() == null ? 1 : req.status());
+            row.setSort(req.sort() == null ? 0 : req.sort());
+            row.setCreatedAt(now);
+            row.setUpdatedAt(now);
+            try {
+                geoRegionMapper.insert(row);
+            } catch (DuplicateKeyException e) {
+                lastDup = e;
+                continue;
+            }
 
-        parent.setIsLeaf(0);
-        parent.setUpdatedAt(now);
-        geoRegionMapper.updateById(parent);
+            parent.setIsLeaf(0);
+            parent.setUpdatedAt(now);
+            geoRegionMapper.updateById(parent);
 
-        geoDataCache.evictAfterMutation(newId, req.parentId(), parent.getCountryCode());
-        return toVo(row);
+            geoDataCache.evictAfterMutation(newId, req.parentId(), parent.getCountryCode());
+            return toVo(row);
+        }
+        throw lastDup != null ? lastDup : new BizException(ErrorCode.SYSTEM_ERROR);
     }
 
     @Transactional

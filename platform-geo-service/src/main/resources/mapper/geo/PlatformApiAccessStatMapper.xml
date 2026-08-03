@@ -49,6 +49,10 @@
         ORDER BY bucket ASC
     </select>
 
+    <!--
+      过滤：事实表有维度时走 s.country_code / s.region_level（可吃索引）；
+      未回填时回退 JOIN geo_region，避免看板空结果。
+    -->
     <select id="selectHotRegions" resultType="com.caopan.platform.geo.admin.StatsAdminService$HotRegionRow">
         SELECT s.region_id AS regionId,
                COALESCE(s.country_code, r.country_code) AS countryCode,
@@ -60,10 +64,16 @@
         WHERE s.called_at &gt;= #{from} AND s.called_at &lt; #{to}
           AND s.region_id IS NOT NULL
         <if test="countryCode != null and countryCode != ''">
-            AND COALESCE(s.country_code, r.country_code) = #{countryCode}
+            AND (
+                s.country_code = #{countryCode}
+                OR (s.country_code IS NULL AND r.country_code = #{countryCode})
+            )
         </if>
         <if test="regionLevel != null">
-            AND COALESCE(s.region_level, r.level) = #{regionLevel}
+            AND (
+                s.region_level = #{regionLevel}
+                OR (s.region_level IS NULL AND r.level = #{regionLevel})
+            )
         </if>
         GROUP BY s.region_id, COALESCE(s.country_code, r.country_code), COALESCE(s.region_level, r.level), r.name
         ORDER BY callCount DESC

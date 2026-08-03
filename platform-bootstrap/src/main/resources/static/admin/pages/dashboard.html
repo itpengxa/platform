@@ -103,9 +103,10 @@
       });
     }
 
+    const esc = AdminHttp.escapeHtml;
     const clients = await AdminHttp.api('/admin/platform/v1/stats/by-client?' + tq);
     document.getElementById('clientTbl').innerHTML = clients.map(c =>
-      `<tr style="cursor:pointer" data-code="${String(c.clientCode||'').replace(/"/g,'&quot;')}" onclick="selectClient(this.dataset.code)"><td>${c.clientCode}</td><td>${c.callCount}</td><td>${c.successCount}</td></tr>`).join('');
+      `<tr style="cursor:pointer" data-code="${esc(c.clientCode||'')}" onclick="selectClient(this.dataset.code)"><td>${esc(c.clientCode)}</td><td>${esc(c.callCount)}</td><td>${esc(c.successCount)}</td></tr>`).join('');
 
     const hq = new URLSearchParams({ limit: 20 });
     if (date) hq.set('date', date);
@@ -122,8 +123,8 @@
     } else {
       hotEmpty.style.display = 'none';
       hotTbl.innerHTML = hot.map(h =>
-        `<tr><td>${h.regionId}</td><td>${h.countryCode||''}</td><td>${AdminDict.LEVEL_MAP[h.level]||h.level||''}</td>
-        <td>${h.name||'-'}</td><td>${h.callCount}</td></tr>`).join('');
+        `<tr><td>${esc(h.regionId)}</td><td>${esc(h.countryCode||'')}</td><td>${esc(AdminDict.LEVEL_MAP[h.level]||h.level||'')}</td>
+        <td>${esc(h.name||'-')}</td><td>${esc(h.callCount)}</td></tr>`).join('');
     }
   }
 

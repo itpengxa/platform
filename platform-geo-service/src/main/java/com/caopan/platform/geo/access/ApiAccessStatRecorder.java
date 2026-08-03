@@ -1,7 +1,9 @@
 package com.caopan.platform.geo.access;
 
 import com.caopan.platform.geo.config.runtime.EffectiveAccessLogSettings;
+import com.caopan.platform.geo.entity.GeoRegion;
 import com.caopan.platform.geo.entity.PlatformApiAccessStat;
+import com.caopan.platform.geo.mapper.GeoRegionMapper;
 import com.caopan.platform.geo.mapper.PlatformApiAccessStatMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,12 +29,15 @@ public class ApiAccessStatRecorder {
     private static final Pattern PATH_REGION_ID = Pattern.compile("/regions/(\\d+)(?:/|$)");
 
     private final PlatformApiAccessStatMapper mapper;
+    private final GeoRegionMapper geoRegionMapper;
     private final EffectiveAccessLogSettings accessLogSettings;
 
     public ApiAccessStatRecorder(
             PlatformApiAccessStatMapper mapper,
+            GeoRegionMapper geoRegionMapper,
             EffectiveAccessLogSettings accessLogSettings) {
         this.mapper = mapper;
+        this.geoRegionMapper = geoRegionMapper;
         this.accessLogSettings = accessLogSettings;
     }
 
@@ -58,10 +63,35 @@ public class ApiAccessStatRecorder {
             row.setErrorType(truncate(errorType, 128));
             row.setCostMs(Math.max(costMs, 0));
             applyDimensions(row, requestParams, apiKey);
+            enrichDimsFromRegion(row);
             row.setCreatedAt(LocalDateTime.now());
             mapper.insert(row);
         } catch (Exception e) {
             log.warn("access stat insert failed, api={}, err={}", apiKey, e.toString());
+        }
+    }
+
+    /** 入参缺 countryCode/level 时，用 region_id 回查主表补齐看板维度。 */
+    private void enrichDimsFromRegion(PlatformApiAccessStat row) {
+        if (row.getRegionId() == null) {
+            return;
+        }
+        if (StringUtils.hasText(row.getCountryCode()) && row.getRegionLevel() != null) {
+            return;
+        }
+        try {
+            GeoRegion region = geoRegionMapper.selectById(row.getRegionId());
+            if (region == null) {
+                return;
+            }
+            if (!StringUtils.hasText(row.getCountryCode()) && StringUtils.hasText(region.getCountryCode())) {
+                row.setCountryCode(region.getCountryCode());
+            }
+            if (row.getRegionLevel() == null && region.getLevel() != null) {
+                row.setRegionLevel(region.getLevel());
+            }
+        } catch (Exception e) {
+            log.debug("enrich access stat dims skipped: {}", e.toString());
         }
     }
 
@@ -84,7 +114,6 @@ public class ApiAccessStatRecorder {
         Long regionId = firstLong(params, "parentId", "rootId", "id");
         if (regionId == null) {
             Matcher jm = JSON_NUM.matcher(params);
-            // 优先 parentId / rootId，再 id
             Long parent = null;
             Long root = null;
             Long id = null;

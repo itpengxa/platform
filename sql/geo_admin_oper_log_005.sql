@@ -2,9 +2,9 @@
 
 CREATE TABLE IF NOT EXISTS platform_admin_operation_log (
   id               BIGINT        NOT NULL AUTO_INCREMENT,
-  module           VARCHAR(32)   NOT NULL COMMENT 'region/config/cache',
-  action           VARCHAR(32)   NOT NULL COMMENT 'CREATE/UPDATE/STATUS/UPSERT/RESET/RELOAD/CLEAR/EVICT',
-  resource_type    VARCHAR(64)   NOT NULL COMMENT 'geo_region / platform_runtime_config / geo_cache',
+  module           VARCHAR(32)   NOT NULL COMMENT 'region/config/cache/client/token/admin/report',
+  action           VARCHAR(32)   NOT NULL COMMENT 'CREATE/UPDATE/STATUS/UPSERT/RESET/RELOAD/CLEAR/EVICT/ISSUE/REVOKE/APPROVE/REJECT/RESET_PASSWORD',
+  resource_type    VARCHAR(64)   NOT NULL COMMENT 'geo_region / platform_runtime_config / geo_cache / platform_access_client / platform_access_token / platform_admin_user / geo_region_report',
   resource_id      VARCHAR(128)  NULL COMMENT '业务主键或 config_key / scope',
   request_summary  VARCHAR(2048) NULL COMMENT '脱敏后入参摘要',
   before_data      TEXT          NULL COMMENT '可选变更前快照(JSON)',

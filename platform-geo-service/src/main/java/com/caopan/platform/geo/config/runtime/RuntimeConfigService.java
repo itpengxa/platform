@@ -404,6 +404,9 @@ public class RuntimeConfigService {
             }
             case DOUBLE -> {
                 double n = Double.parseDouble(v);
+                if (!Double.isFinite(n)) {
+                    throw new BizException(ErrorCode.PARAM_INVALID);
+                }
                 checkRange(def, n);
                 yield String.valueOf(n);
             }

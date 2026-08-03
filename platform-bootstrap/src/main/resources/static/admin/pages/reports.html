@@ -55,16 +55,19 @@
     const data = await AdminHttp.api('/admin/geo/v1/reports/page?' + q);
     pager.apply(data);
     const list = data.list || [];
+    const esc = AdminHttp.escapeHtml;
     document.getElementById('tbody').innerHTML = list.length ? list.map(r => `<tr>
-      <td>${r.id}</td><td>${r.clientCode}</td><td>${r.missingName}</td><td>${r.parentId}</td>
+      <td>${esc(r.id)}</td><td>${esc(r.clientCode)}</td><td>${esc(r.missingName)}</td><td>${esc(r.parentId)}</td>
       <td>${AdminDict.reportStatusTag(r.resultStatus)}</td>
-      <td>${r.regionId||'-'}</td><td>${r.distanceKm == null ? '-' : r.distanceKm}</td><td>${(r.createdAt||'').replace('T',' ')}</td>
+      <td>${esc(r.regionId||'-')}</td><td>${r.distanceKm == null ? '-' : esc(r.distanceKm)}</td><td>${esc((r.createdAt||'').replace('T',' '))}</td>
       <td>${actionBtns(r)}</td></tr>`).join('') : '<tr><td colspan="9" style="color:#999;text-align:center">暂无数据</td></tr>';
   }
   function actionBtns(r) {
     if (r.resultStatus === 'DISTANCE_REJECT' || r.resultStatus === 'PARENT_NO_COORD') {
-      return `<button class="btn" style="font-size:12px;margin-right:4px" onclick="approve(${r.id})">通过</button>
-              <button class="btn" style="font-size:12px;background:#999" onclick="reject(${r.id})">驳回</button>`;
+      const id = Number(r.id);
+      if (!Number.isFinite(id)) return '-';
+      return `<button class="btn" style="font-size:12px;margin-right:4px" onclick="approve(${id})">通过</button>
+              <button class="btn" style="font-size:12px;background:#999" onclick="reject(${id})">驳回</button>`;
     }
     return '-';
   }

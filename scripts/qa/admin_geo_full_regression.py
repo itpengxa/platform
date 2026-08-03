@@ -101,7 +101,7 @@ def main() -> int:
     # IA markers
     code, html, _ = http("GET", "/admin/index.html")
     html = html if isinstance(html, str) else _
-    for marker in ["用户与接入", "系统配置", "缓存管理", "开发工具", "settings.html", "cache.html"]:
+    for marker in ["账号与接入", "系统配置", "缓存管理", "开发工具", "settings.html", "cache.html"]:
         s.add(f"ia:{marker}", marker in html, severity="P1")
 
     # --- auth ---

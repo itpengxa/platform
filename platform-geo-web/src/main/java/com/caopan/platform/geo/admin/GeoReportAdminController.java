@@ -2,8 +2,11 @@ package com.caopan.platform.geo.admin;
 
 import com.caopan.platform.common.api.PageResult;
 import com.caopan.platform.common.api.Result;
+import com.caopan.platform.geo.admin.AdminOperationLogService.RecordRequest;
+import com.caopan.platform.geo.admin.support.AdminOperatorResolver;
 import com.caopan.platform.geo.entity.GeoRegionReport;
 import com.caopan.platform.geo.report.GeoReportService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,9 +25,16 @@ import java.time.LocalDateTime;
 public class GeoReportAdminController {
 
     private final GeoReportService geoReportService;
+    private final AdminOperationLogService operationLogService;
+    private final AdminOperatorResolver operatorResolver;
 
-    public GeoReportAdminController(GeoReportService geoReportService) {
+    public GeoReportAdminController(
+            GeoReportService geoReportService,
+            AdminOperationLogService operationLogService,
+            AdminOperatorResolver operatorResolver) {
         this.geoReportService = geoReportService;
+        this.operationLogService = operationLogService;
+        this.operatorResolver = operatorResolver;
     }
 
     @GetMapping("/page")
@@ -41,14 +51,48 @@ public class GeoReportAdminController {
     }
 
     @PostMapping("/{id}/approve")
-    public Result<Void> approve(@PathVariable Long id) {
-        geoReportService.approve(id);
-        return Result.ok(null);
+    public Result<Void> approve(@PathVariable Long id, HttpServletRequest request) {
+        AdminOperatorResolver.Resolved op = operatorResolver.resolve(request);
+        long start = System.currentTimeMillis();
+        try {
+            geoReportService.approve(id);
+            int cost = (int) (System.currentTimeMillis() - start);
+            operationLogService.record(RecordRequest.ok(
+                    "report", "APPROVE", "geo_region_report", String.valueOf(id),
+                    "approve report id=" + id,
+                    null, "resultStatus=MANUAL_CREATED",
+                    op.operator(), op.operatorId(), op.clientIp(), cost));
+            return Result.ok(null);
+        } catch (RuntimeException e) {
+            int cost = (int) (System.currentTimeMillis() - start);
+            operationLogService.record(RecordRequest.fail(
+                    "report", "APPROVE", "geo_region_report", String.valueOf(id),
+                    "approve", e.getMessage(),
+                    op.operator(), op.operatorId(), op.clientIp(), cost));
+            throw e;
+        }
     }
 
     @PostMapping("/{id}/reject")
-    public Result<Void> reject(@PathVariable Long id) {
-        geoReportService.reject(id);
-        return Result.ok(null);
+    public Result<Void> reject(@PathVariable Long id, HttpServletRequest request) {
+        AdminOperatorResolver.Resolved op = operatorResolver.resolve(request);
+        long start = System.currentTimeMillis();
+        try {
+            geoReportService.reject(id);
+            int cost = (int) (System.currentTimeMillis() - start);
+            operationLogService.record(RecordRequest.ok(
+                    "report", "REJECT", "geo_region_report", String.valueOf(id),
+                    "reject report id=" + id,
+                    null, "resultStatus=REJECTED",
+                    op.operator(), op.operatorId(), op.clientIp(), cost));
+            return Result.ok(null);
+        } catch (RuntimeException e) {
+            int cost = (int) (System.currentTimeMillis() - start);
+            operationLogService.record(RecordRequest.fail(
+                    "report", "REJECT", "geo_region_report", String.valueOf(id),
+                    "reject", e.getMessage(),
+                    op.operator(), op.operatorId(), op.clientIp(), cost));
+            throw e;
+        }
     }
 }

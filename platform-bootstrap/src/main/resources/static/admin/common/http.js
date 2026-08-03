@@ -6,6 +6,17 @@
     return sessionStorage.getItem(TOKEN_KEY) || '';
   }
 
+  /** HTML 转义，禁止把用户/业务字段直接拼进 innerHTML */
+  function escapeHtml(value) {
+    if (value == null) return '';
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function setSession(token, user) {
     if (token) sessionStorage.setItem(TOKEN_KEY, token);
     if (user) sessionStorage.setItem(USER_KEY, JSON.stringify(user));
@@ -87,5 +98,5 @@
     return data.data;
   }
 
-  window.AdminHttp = { api, login, logout, getToken, getUser, requireLogin, clearSession, setSession };
+  window.AdminHttp = { api, login, logout, getToken, getUser, requireLogin, clearSession, setSession, escapeHtml };
 })();

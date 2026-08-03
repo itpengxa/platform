@@ -77,13 +77,14 @@
       pager.apply(data);
       const tb = document.getElementById('tbody');
       const list = data.list || [];
+      const esc = AdminHttp.escapeHtml;
       tb.innerHTML = list.length ? list.map(r => `
         <tr>
-          <td>${r.id}</td><td>${r.username}</td><td>${r.displayName||''}</td>
-          <td>${AdminDict.statusTag(r.status)}</td><td>${r.createdAt||''}</td>
+          <td>${esc(r.id)}</td><td>${esc(r.username)}</td><td>${esc(r.displayName||'')}</td>
+          <td>${AdminDict.statusTag(r.status)}</td><td>${esc(r.createdAt||'')}</td>
           <td>
-            <button class="btn btn-secondary" onclick="openPwd(${r.id})">重置密码</button>
-            <button class="btn btn-secondary" onclick="toggle(${r.id},${r.status===1?0:1})">${r.status===1?'停用':'启用'}</button>
+            <button class="btn btn-secondary" onclick="openPwd(${Number(r.id)})">重置密码</button>
+            <button class="btn btn-secondary" onclick="toggle(${Number(r.id)},${r.status===1?0:1})">${r.status===1?'停用':'启用'}</button>
           </td>
         </tr>`).join('') : '<tr><td colspan="6" style="color:#999;text-align:center">暂无数据</td></tr>';
     }

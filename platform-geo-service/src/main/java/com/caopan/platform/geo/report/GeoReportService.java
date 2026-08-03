@@ -13,8 +13,11 @@ import com.caopan.platform.geo.mapper.GeoRegionMapper;
 import com.caopan.platform.geo.mapper.GeoRegionReportMapper;
 import com.caopan.platform.geo.service.support.GeoDataCache;
 import com.caopan.platform.geo.service.support.PathUtil;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
@@ -25,9 +28,14 @@ import java.util.Optional;
 
 /**
  * 缺省上报业务（GEO-002）：归属优先，距离兜底。
+ * <p>外部 geocode 在事务外执行；短事务仅覆盖重复校验 / 号段分配 / 落库，避免拖死连接池。</p>
  */
 @Service
 public class GeoReportService {
+
+    private static final List<String> REVIEWABLE = List.of(
+            ReportResultStatus.DISTANCE_REJECT,
+            ReportResultStatus.PARENT_NO_COORD);
 
     private final GeoRegionMapper geoRegionMapper;
     private final GeoRegionReportMapper reportMapper;
@@ -36,6 +44,7 @@ public class GeoReportService {
     private final GeoDataCache geoDataCache;
     private final EffectiveReportSettings reportSettings;
     private final ReportRateLimiter rateLimiter;
+    private final TransactionTemplate transactionTemplate;
 
     public GeoReportService(
             GeoRegionMapper geoRegionMapper,
@@ -44,7 +53,8 @@ public class GeoReportService {
             RegionIdAllocator idAllocator,
             GeoDataCache geoDataCache,
             EffectiveReportSettings reportSettings,
-            ReportRateLimiter rateLimiter) {
+            ReportRateLimiter rateLimiter,
+            PlatformTransactionManager transactionManager) {
         this.geoRegionMapper = geoRegionMapper;
         this.reportMapper = reportMapper;
         this.geocodeClient = geocodeClient;
@@ -52,9 +62,9 @@ public class GeoReportService {
         this.geoDataCache = geoDataCache;
         this.reportSettings = reportSettings;
         this.rateLimiter = rateLimiter;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    @Transactional
     public ReportResponse reportMissing(ReportMissingRequest req) {
         CallerContext caller = CallerContextHolder.get();
         String clientCode = caller == null ? "anonymous" : caller.clientCode();
@@ -64,32 +74,29 @@ public class GeoReportService {
         if (parentId == null || parentId <= 0 || !StringUtils.hasText(req.missingName())) {
             throw new BizException(ErrorCode.PARAM_INVALID);
         }
+        // 读校验在事务外：不占用连接等待外部 HTTP
         GeoRegion parent = geoRegionMapper.findEnabledById(parentId);
         if (parent == null) {
             throw new BizException(ErrorCode.PARENT_INVALID);
         }
 
         String missingName = req.missingName().trim();
-        GeoRegionReport report = newBaseReport(clientCode, parent, req, missingName);
-        LocalDateTime now = LocalDateTime.now();
-        report.setCreatedAt(now);
-        report.setUpdatedAt(now);
-
-        // 同父下主表已有同名，或历史上已有上报记录，均视为已存在
         String nameEn = trimOptional(req.missingNameEn());
+        GeoRegionReport report = newBaseReport(clientCode, parent, req, missingName);
+
         if (geoRegionMapper.countSameNameUnderParent(parentId, missingName, nameEn, null) > 0
                 || reportMapper.countByParentAndName(parentId, missingName) > 0) {
             report.setResultStatus(ReportResultStatus.ALREADY_EXISTS);
-            reportMapper.insert(report);
-            return toResponse(report, false, null, "Region already exists under parent");
+            return persistReport(report, false, null, "Region already exists under parent",
+                    false, parent, req, missingName, null);
         }
 
         String address = buildGeocodeAddress(parent, missingName);
         Optional<ParentBelongingChecker.GeocodeResult> geocodeOpt = geocodeClient.geocode(address);
         if (geocodeOpt.isEmpty()) {
             report.setResultStatus(ReportResultStatus.GEOCODE_FAIL);
-            reportMapper.insert(report);
-            return toResponse(report, false, null, "Geocode failed");
+            return persistReport(report, false, null, "Geocode failed",
+                    false, parent, req, missingName, null);
         }
 
         ParentBelongingChecker.GeocodeResult geocode = geocodeOpt.get();
@@ -103,30 +110,27 @@ public class GeoReportService {
             report.setDistanceKm(GeoDistanceUtil.toDecimalKm(distanceKm));
         }
 
+        boolean needCreate = false;
         if (underParent) {
             if (reportSettings.autoCreateEnabled()) {
-                Long regionId = autoCreateRegion(parent, req, missingName, geocode, now);
-                report.setRegionId(regionId);
                 report.setResultStatus(ReportResultStatus.AUTO_CREATED);
+                needCreate = true;
             } else {
                 report.setResultStatus(ReportResultStatus.DISTANCE_REJECT);
             }
+        } else if (parent.getLatitude() == null || parent.getLongitude() == null) {
+            report.setResultStatus(ReportResultStatus.PARENT_NO_COORD);
+        } else if (distanceKm == null || distanceKm > reportSettings.maxParentDistanceKm()) {
+            report.setResultStatus(ReportResultStatus.DISTANCE_REJECT);
+        } else if (reportSettings.autoCreateEnabled()) {
+            report.setResultStatus(ReportResultStatus.AUTO_CREATED);
+            needCreate = true;
         } else {
-            if (parent.getLatitude() == null || parent.getLongitude() == null) {
-                report.setResultStatus(ReportResultStatus.PARENT_NO_COORD);
-            } else if (distanceKm == null || distanceKm > reportSettings.maxParentDistanceKm()) {
-                report.setResultStatus(ReportResultStatus.DISTANCE_REJECT);
-            } else if (reportSettings.autoCreateEnabled()) {
-                Long regionId = autoCreateRegion(parent, req, missingName, geocode, now);
-                report.setRegionId(regionId);
-                report.setResultStatus(ReportResultStatus.AUTO_CREATED);
-            } else {
-                report.setResultStatus(ReportResultStatus.DISTANCE_REJECT);
-            }
+            report.setResultStatus(ReportResultStatus.DISTANCE_REJECT);
         }
 
-        reportMapper.insert(report);
-        return toResponse(report, underParent, distanceKm, null);
+        return persistReport(report, underParent, distanceKm, null,
+                needCreate, parent, req, missingName, geocode);
     }
 
     public PageResult<GeoRegionReport> pageAdmin(String resultStatus, String countryCode, String clientCode,
@@ -142,13 +146,15 @@ public class GeoReportService {
 
     @Transactional
     public void approve(Long id) {
-        GeoRegionReport report = requireReport(id);
+        GeoRegionReport report = reportMapper.selectForUpdate(id);
+        if (report == null) {
+            throw new BizException(ErrorCode.PARAM_INVALID);
+        }
         if (ReportResultStatus.AUTO_CREATED.equals(report.getResultStatus())
                 || ReportResultStatus.MANUAL_CREATED.equals(report.getResultStatus())) {
             return;
         }
-        if (!ReportResultStatus.DISTANCE_REJECT.equals(report.getResultStatus())
-                && !ReportResultStatus.PARENT_NO_COORD.equals(report.getResultStatus())) {
+        if (!REVIEWABLE.contains(report.getResultStatus())) {
             throw new BizException(ErrorCode.PARAM_INVALID);
         }
         GeoRegion parent = geoRegionMapper.findEnabledById(report.getParentId());
@@ -167,18 +173,65 @@ public class GeoReportService {
                     report.getGeocodeRaw(), java.util.Map.of(), report.getGeocodeRaw());
         }
         Long regionId = autoCreateRegion(parent, req, report.getMissingName(), geocode, now);
-        report.setRegionId(regionId);
-        report.setResultStatus(ReportResultStatus.MANUAL_CREATED);
-        report.setUpdatedAt(now);
-        reportMapper.updateById(report);
+        int n = reportMapper.updateStatusIf(
+                id, REVIEWABLE, ReportResultStatus.MANUAL_CREATED, regionId, now);
+        if (n == 0) {
+            throw new BizException(ErrorCode.PARAM_INVALID);
+        }
     }
 
     @Transactional
     public void reject(Long id) {
-        GeoRegionReport report = requireReport(id);
-        report.setResultStatus(ReportResultStatus.REJECTED);
-        report.setUpdatedAt(LocalDateTime.now());
-        reportMapper.updateById(report);
+        GeoRegionReport report = reportMapper.selectForUpdate(id);
+        if (report == null) {
+            throw new BizException(ErrorCode.PARAM_INVALID);
+        }
+        if (!REVIEWABLE.contains(report.getResultStatus())) {
+            throw new BizException(ErrorCode.PARAM_INVALID);
+        }
+        int n = reportMapper.updateStatusIf(
+                id, REVIEWABLE, ReportResultStatus.REJECTED, null, LocalDateTime.now());
+        if (n == 0) {
+            throw new BizException(ErrorCode.PARAM_INVALID);
+        }
+    }
+
+    /**
+     * 短事务落库：事务内再校验同名，必要时自动建区 + insert 上报。
+     */
+    private ReportResponse persistReport(
+            GeoRegionReport report,
+            Boolean underParent,
+            Double distanceKm,
+            String message,
+            boolean needCreate,
+            GeoRegion parent,
+            ReportMissingRequest req,
+            String missingName,
+            ParentBelongingChecker.GeocodeResult geocode) {
+        return transactionTemplate.execute(status -> {
+            LocalDateTime now = LocalDateTime.now();
+            report.setCreatedAt(now);
+            report.setUpdatedAt(now);
+
+            String nameEn = trimOptional(req.missingNameEn());
+            if (!ReportResultStatus.ALREADY_EXISTS.equals(report.getResultStatus())
+                    && (geoRegionMapper.countSameNameUnderParent(parent.getId(), missingName, nameEn, null) > 0
+                    || reportMapper.countByParentAndName(parent.getId(), missingName) > 0)) {
+                report.setResultStatus(ReportResultStatus.ALREADY_EXISTS);
+                report.setRegionId(null);
+                reportMapper.insert(report);
+                return toResponse(report, underParent, distanceKm, "Region already exists under parent");
+            }
+
+            if (needCreate && ReportResultStatus.AUTO_CREATED.equals(report.getResultStatus())) {
+                Long regionId = autoCreateRegion(parent, req, missingName, geocode, now);
+                report.setRegionId(regionId);
+            }
+
+            reportMapper.insert(report);
+            return toResponse(report, underParent, distanceKm, message);
+        });
     }
 
     private void assertRateLimit(String clientCode) {
@@ -193,7 +246,21 @@ public class GeoReportService {
             throw new BizException(ErrorCode.PARENT_INVALID);
         }
         int level = parent.getLevel() + 1;
-        long newId = idAllocator.allocate(level);
+        DuplicateKeyException lastDup = null;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            long newId = idAllocator.allocate(level);
+            try {
+                return insertNewRegion(parent, req, missingName, geocode, now, newId, level);
+            } catch (DuplicateKeyException e) {
+                lastDup = e;
+            }
+        }
+        throw lastDup != null ? lastDup : new BizException(ErrorCode.SYSTEM_ERROR);
+    }
+
+    private Long insertNewRegion(GeoRegion parent, ReportMissingRequest req, String missingName,
+                                 ParentBelongingChecker.GeocodeResult geocode, LocalDateTime now,
+                                 long newId, int level) {
         String path = parent.getPath() + newId + "/";
 
         GeoRegion row = new GeoRegion();
@@ -274,17 +341,8 @@ public class GeoReportService {
                 geocode.lng());
     }
 
-    private GeoRegionReport requireReport(Long id) {
-        GeoRegionReport report = reportMapper.selectById(id);
-        if (report == null) {
-            throw new BizException(ErrorCode.PARAM_INVALID);
-        }
-        return report;
-    }
-
     private static ReportResponse toResponse(GeoRegionReport report, Boolean underParent,
                                              Double distanceKm, String message) {
-        // 避免三元 true 分支为 primitive double、false 为 Double 时自动拆箱 NPE
         Double resolvedDistance = distanceKm;
         if (resolvedDistance == null && report.getDistanceKm() != null) {
             resolvedDistance = report.getDistanceKm().doubleValue();

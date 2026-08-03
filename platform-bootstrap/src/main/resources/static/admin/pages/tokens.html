@@ -72,11 +72,12 @@
     const data = await AdminHttp.api('/admin/platform/v1/tokens/page?' + q);
     pager.apply(data);
     const list = data.list || [];
+    const esc = AdminHttp.escapeHtml;
     document.getElementById('tbody').innerHTML = list.length ? list.map(t => `<tr>
-      <td>${t.id}</td><td>${t.clientCode}</td><td>${t.tokenPrefix}…</td>
+      <td>${esc(t.id)}</td><td>${esc(t.clientCode)}</td><td>${esc(t.tokenPrefix)}…</td>
       <td>${t.status===1?'<span class="tag-green">有效</span>':'<span class="tag-gray">已吊销</span>'}</td>
-      <td>${(t.createdAt||'').replace('T',' ')}</td>
-      <td>${t.status===1?`<button class="btn btn-secondary" style="font-size:12px" onclick="revoke(${t.id})">吊销</button>`:'-'}</td></tr>`).join('') : '<tr><td colspan="6" style="color:#999;text-align:center">暂无数据</td></tr>';
+      <td>${esc((t.createdAt||'').replace('T',' '))}</td>
+      <td>${t.status===1?`<button class="btn btn-secondary" style="font-size:12px" onclick="revoke(${Number(t.id)})">吊销</button>`:'-'}</td></tr>`).join('') : '<tr><td colspan="6" style="color:#999;text-align:center">暂无数据</td></tr>';
   }
   function openIssue() {
     document.getElementById('issueCode').value = document.getElementById('clientCode').value.trim();
