@@ -13,7 +13,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -209,6 +211,100 @@ public class TieredCache {
 
     public long localEstimatedSize() {
         return localCache.estimatedSize();
+    }
+
+    /**
+     * 管理端只读探查：不回源 DB，返回 L1/L2 是否命中及内容。
+     */
+    public Map<String, Object> inspect(String key) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("key", key);
+
+        Object local = localCache.getIfPresent(key);
+        if (local == null) {
+            m.put("l1Present", false);
+            m.put("l1Negative", false);
+            m.put("l1Value", null);
+        } else if (local == NULL_SENTINEL) {
+            m.put("l1Present", true);
+            m.put("l1Negative", true);
+            m.put("l1Value", null);
+        } else {
+            m.put("l1Present", true);
+            m.put("l1Negative", false);
+            m.put("l1Value", toInspectValue(local));
+        }
+
+        m.put("l2Enabled", redisEnabled);
+        if (!redisEnabled) {
+            m.put("l2Present", false);
+            m.put("l2Negative", false);
+            m.put("l2Raw", null);
+            m.put("l2Value", null);
+            fillFoundSourceValue(m);
+            return m;
+        }
+        try {
+            String raw = redisTemplate.opsForValue().get(key);
+            if (raw == null || raw.isEmpty()) {
+                m.put("l2Present", false);
+                m.put("l2Negative", false);
+                m.put("l2Raw", null);
+                m.put("l2Value", null);
+            } else if (REDIS_NULL.equals(raw)) {
+                m.put("l2Present", true);
+                m.put("l2Negative", true);
+                m.put("l2Raw", raw);
+                m.put("l2Value", null);
+            } else {
+                m.put("l2Present", true);
+                m.put("l2Negative", false);
+                m.put("l2Raw", raw.length() > 200_000 ? raw.substring(0, 200_000) + "...(truncated)" : raw);
+                m.put("l2Value", parseJsonLoose(raw));
+            }
+        } catch (Exception e) {
+            m.put("l2Present", false);
+            m.put("l2Error", e.toString());
+            m.put("l2Negative", false);
+            m.put("l2Raw", null);
+            m.put("l2Value", null);
+        }
+        fillFoundSourceValue(m);
+        return m;
+    }
+
+    private static void fillFoundSourceValue(Map<String, Object> m) {
+        boolean found = Boolean.TRUE.equals(m.get("l1Present")) || Boolean.TRUE.equals(m.get("l2Present"));
+        m.put("found", found);
+        Object value = null;
+        String source = null;
+        if (Boolean.TRUE.equals(m.get("l1Present")) && !Boolean.TRUE.equals(m.get("l1Negative"))) {
+            value = m.get("l1Value");
+            source = "L1";
+        } else if (Boolean.TRUE.equals(m.get("l2Present")) && !Boolean.TRUE.equals(m.get("l2Negative"))) {
+            value = m.get("l2Value");
+            source = "L2";
+        } else if (found) {
+            source = "NEGATIVE";
+        }
+        m.put("value", value);
+        m.put("source", source);
+    }
+
+    private Object toInspectValue(Object local) {
+        try {
+            return objectMapper.convertValue(local, Object.class);
+        } catch (Exception e) {
+            return String.valueOf(local);
+        }
+    }
+
+    private Object parseJsonLoose(String raw) {
+        try {
+            return objectMapper.readValue(raw, Object.class);
+        } catch (Exception e) {
+            return raw;
+        }
     }
 
     /**

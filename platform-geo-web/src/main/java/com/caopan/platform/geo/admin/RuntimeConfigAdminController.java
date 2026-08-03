@@ -62,6 +62,17 @@ public class RuntimeConfigAdminController {
         return Result.ok(data);
     }
 
+    /** 新增自定义配置项（非静态注册表键）。 */
+    @PostMapping("/create")
+    public Result<Map<String, Object>> create(
+            @RequestBody RuntimeConfigService.CreateConfigRequest body,
+            HttpServletRequest request) {
+        runtimeConfigService.createCustom(body, resolveUpdatedBy(request));
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("groups", runtimeConfigService.listGrouped());
+        return Result.ok(data);
+    }
+
     @PostMapping("/reset")
     public Result<Map<String, Object>> reset(
             @RequestBody ResetRequest body,

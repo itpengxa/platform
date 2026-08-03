@@ -17,16 +17,18 @@
     }
     .tab.active { color: #1677ff; border-bottom-color: #fff; background: #fff; font-weight: 600; }
     .panel { background: #fff; border: 1px solid #e8e8e8; border-radius: 0 6px 6px 6px; padding: 16px; }
-    .item { border-bottom: 1px solid #f0f0f0; padding: 12px 0; display: grid; grid-template-columns: 1fr 280px; gap: 12px; }
+    .item { border-bottom: 1px solid #f0f0f0; padding: 12px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
     .item:last-child { border-bottom: none; }
-    .meta .key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #666; }
+    .meta { min-width: 0; }
+    .meta .key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #666; word-break: break-all; }
     .meta .desc { font-size: 14px; margin: 4px 0; }
     .meta .flags { font-size: 12px; color: #888; display: flex; gap: 8px; flex-wrap: wrap; }
     .tag { padding: 1px 6px; border-radius: 3px; background: #f5f5f5; }
     .tag-db { background: #e6f4ff; color: #1677ff; }
     .tag-warn { background: #fff7e6; color: #d46b08; }
     .tag-ro { background: #fafafa; color: #999; }
-    .control input, .control select { width: 100%; padding: 6px 8px; border: 1px solid #d9d9d9; border-radius: 4px; }
+    .control { min-width: 0; }
+    .control input, .control select { width: 100%; padding: 6px 8px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box; }
     .control .hint { font-size: 12px; color: #888; margin-top: 4px; }
     .control .actions { margin-top: 6px; display: flex; gap: 6px; }
     .msg { margin-bottom: 12px; padding: 8px 12px; border-radius: 4px; display: none; font-size: 13px; }
@@ -36,16 +38,48 @@
     .msg.warn { background: #fffbe6; color: #d48806; border: 1px solid #ffe58f; }
   </style>
   <script src="../common/http.js"></script>
+  <script src="../common/pager.js"></script>
 </head>
 <body>
 <div class="toolbar">
   <button class="btn" id="btnSave" onclick="saveAll()">保存当前分组</button>
+  <button class="btn btn-secondary" onclick="openCreate()">新增配置</button>
   <button class="btn btn-secondary" onclick="reload()">从库重载</button>
-  <span style="font-size:12px;color:#888">密钥项留空表示不修改；可「恢复默认」清除 DB 覆盖</span>
+  <span style="font-size:12px;color:#888">密钥项留空表示不修改；可「恢复默认」清除 DB 覆盖；自定义项可删除</span>
 </div>
 <div id="msg" class="msg"></div>
 <div class="tabs" id="tabs"></div>
 <div class="panel" id="panel"></div>
+<div id="pager"></div>
+
+<div id="createMask" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:20;align-items:center;justify-content:center">
+  <div style="width:min(480px,92vw);background:#fff;border-radius:8px;padding:16px;box-shadow:0 8px 28px rgba(0,0,0,.18)">
+    <h3 style="margin:0 0 12px;font-size:16px">新增配置</h3>
+    <div style="display:grid;gap:8px;font-size:13px">
+      <label>配置键 *<input id="cKey" placeholder="platform.custom.example" style="width:100%;padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px;box-sizing:border-box"/></label>
+      <label>分组 *
+        <select id="cGroup" style="width:100%;padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px"></select>
+      </label>
+      <label>类型
+        <select id="cType" style="width:100%;padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px">
+          <option value="STRING">STRING</option>
+          <option value="BOOL">BOOL</option>
+          <option value="INT">INT</option>
+          <option value="LONG">LONG</option>
+          <option value="DOUBLE">DOUBLE</option>
+          <option value="SECRET">SECRET</option>
+        </select>
+      </label>
+      <label>初始值 *<input id="cValue" placeholder="value" style="width:100%;padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px;box-sizing:border-box"/></label>
+      <label>说明<input id="cDesc" placeholder="可选描述" style="width:100%;padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px;box-sizing:border-box"/></label>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button type="button" class="btn btn-secondary" onclick="closeCreate()">取消</button>
+      <button type="button" class="btn" onclick="submitCreate()">创建</button>
+    </div>
+    <div style="margin-top:8px;font-size:12px;color:#888">仅可新增未在代码注册表中的键；写入 DB 后出现在对应分组，热生效（业务代码需自行读取 registry）。</div>
+  </div>
+</div>
 
 <script>
   const GROUP_LABELS = {
@@ -54,12 +88,18 @@
     auth: '鉴权',
     'access-log': '访问日志',
     admin: '管理端',
-    cache: '缓存'
+    cache: '缓存',
+    custom: '自定义'
   };
   const CLEAR = '__CLEAR__';
   let groups = {};
   let currentGroup = 'report';
   const drafts = {}; // key -> draft value string
+  const pager = AdminPager.mount('pager', {
+    pageSize: 10,
+    sizeOptions: [10, 20, 50, 100],
+    onChange: () => renderPanel()
+  });
 
   function showMsg(text, type) {
     const el = document.getElementById('msg');
@@ -79,6 +119,7 @@
     groups = data.groups || {};
     const names = Object.keys(groups);
     if (!names.includes(currentGroup) && names.length) currentGroup = names[0];
+    pager.reset();
     renderTabs();
     renderPanel();
   }
@@ -91,7 +132,13 @@
       a.type = 'button';
       a.className = 'tab' + (g === currentGroup ? ' active' : '');
       a.textContent = GROUP_LABELS[g] || g;
-      a.onclick = () => { currentGroup = g; renderTabs(); renderPanel(); clearMsg(); };
+      a.onclick = () => {
+        currentGroup = g;
+        pager.reset();
+        renderTabs();
+        renderPanel();
+        clearMsg();
+      };
       tabs.appendChild(a);
     });
   }
@@ -100,19 +147,27 @@
     const items = groups[currentGroup] || [];
     const panel = document.getElementById('panel');
     panel.innerHTML = '';
+    pager.apply({
+      total: items.length,
+      pageNum: pager.pageNum,
+      pageSize: pager.pageSize
+    });
     if (!items.length) {
       panel.innerHTML = '<div style="color:#999">暂无配置项</div>';
       return;
     }
-    items.forEach(item => {
+    const start = (pager.pageNum - 1) * pager.pageSize;
+    const pageItems = items.slice(start, start + pager.pageSize);
+    pageItems.forEach(item => {
       const row = document.createElement('div');
       row.className = 'item';
       const flags = [];
-      flags.push('<span class="tag ' + (item.source === 'DB' ? 'tag-db' : '') + '">' +
-        (item.source === 'DB' ? '来自 DB' : '来自默认') + '</span>');
+      flags.push('<span class="tag ' + (item.source === 'DB' ? 'tag-db' : item.source === 'CUSTOM' ? 'tag-db' : '') + '">' +
+        (item.source === 'DB' ? '来自 DB' : item.source === 'CUSTOM' ? '自定义' : '来自默认') + '</span>');
       if (!item.hotReload) flags.push('<span class="tag tag-warn">需重启</span>');
       if (!item.writable) flags.push('<span class="tag tag-ro">只读</span>');
       if (item.secret) flags.push('<span class="tag">密钥</span>');
+      if (item.custom) flags.push('<span class="tag tag-warn">自定义</span>');
 
       let controlHtml = '';
       const draftKey = item.key;
@@ -142,7 +197,7 @@
       }
       if (item.writable) {
         controlHtml += '<div class="actions"><button type="button" class="btn btn-danger" data-reset="' +
-          esc(item.key) + '">恢复默认</button></div>';
+          esc(item.key) + '">' + (item.custom ? '删除配置' : '恢复默认') + '</button></div>';
       }
 
       row.innerHTML =
@@ -176,8 +231,9 @@
     for (const item of items) {
       if (!item.writable) continue;
       const el = document.querySelector('[data-key="' + cssEscape(item.key) + '"]');
-      if (!el) continue;
-      const v = el.value;
+      // 分页后非当前页控件不在 DOM，改用 drafts
+      const v = el ? el.value : drafts[item.key];
+      if (v == null) continue;
       if (item.secret) {
         // 密钥留空=不修改；仅提交用户新输入
         if (v && String(v).trim()) simple.push({ key: item.key, value: v });
@@ -203,6 +259,7 @@
       });
       groups = data.groups || groups;
       Object.keys(drafts).forEach(k => delete drafts[k]);
+      pager.reset();
       renderPanel();
       let tip = '已保存并热生效';
       if (data.needRestart && data.needRestart.length) {
@@ -219,7 +276,11 @@
   }
 
   async function resetOne(key) {
-    if (!confirm('清除该键的 DB 覆盖，恢复 yml 默认？')) return;
+    const item = (groups[currentGroup] || []).find(i => i.key === key);
+    const tip = item && item.custom
+      ? '删除该自定义配置？'
+      : '清除该键的 DB 覆盖，恢复 yml 默认？';
+    if (!confirm(tip)) return;
     try {
       const data = await AdminHttp.api('/admin/platform/v1/configs/reset', {
         method: 'POST',
@@ -227,10 +288,71 @@
       });
       groups = data.groups || groups;
       delete drafts[key];
+      if (item && item.custom && !(groups[currentGroup] || []).some(i => i.key === key)) {
+        // 自定义组可能变空，切回有数据的组
+        const names = Object.keys(groups).filter(g => (groups[g] || []).length);
+        if (names.length && !(groups[currentGroup] || []).length) currentGroup = names[0];
+        pager.reset();
+        renderTabs();
+      }
+      // 删除后若当前页越界，pager.apply 会收敛 pageNum
       renderPanel();
-      showMsg('已恢复默认：' + key, 'ok');
+      showMsg((item && item.custom ? '已删除：' : '已恢复默认：') + key, 'ok');
     } catch (e) {
-      showMsg(e.message || '恢复失败', 'err');
+      showMsg(e.message || '操作失败', 'err');
+    }
+  }
+
+  function openCreate() {
+    const sel = document.getElementById('cGroup');
+    const opts = Array.from(new Set([
+      ...Object.keys(GROUP_LABELS),
+      ...Object.keys(groups || {}),
+      'custom'
+    ]));
+    sel.innerHTML = opts.map(g =>
+      '<option value="' + esc(g) + '"' + (g === currentGroup ? ' selected' : '') + '>' +
+      esc(GROUP_LABELS[g] || g) + ' (' + esc(g) + ')</option>'
+    ).join('');
+    document.getElementById('cKey').value = '';
+    document.getElementById('cValue').value = '';
+    document.getElementById('cDesc').value = '';
+    document.getElementById('cType').value = 'STRING';
+    const mask = document.getElementById('createMask');
+    mask.style.display = 'flex';
+  }
+
+  function closeCreate() {
+    document.getElementById('createMask').style.display = 'none';
+  }
+
+  async function submitCreate() {
+    const body = {
+      key: document.getElementById('cKey').value.trim(),
+      group: document.getElementById('cGroup').value,
+      valueType: document.getElementById('cType').value,
+      value: document.getElementById('cValue').value,
+      description: document.getElementById('cDesc').value.trim() || null,
+      secret: document.getElementById('cType').value === 'SECRET'
+    };
+    if (!body.key || !body.group) {
+      showMsg('请填写配置键与分组', 'warn');
+      return;
+    }
+    try {
+      const data = await AdminHttp.api('/admin/platform/v1/configs/create', {
+        method: 'POST',
+        body: JSON.stringify(body)
+      });
+      groups = data.groups || groups;
+      currentGroup = body.group;
+      closeCreate();
+      pager.reset();
+      renderTabs();
+      renderPanel();
+      showMsg('已创建配置：' + body.key, 'ok');
+    } catch (e) {
+      showMsg(e.message || '创建失败', 'err');
     }
   }
 

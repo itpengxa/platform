@@ -48,7 +48,7 @@
   </label>
   <button type="button" onclick="reloadPicker()">刷新预览</button>
   <a id="openTab" href="#" target="_blank" rel="noopener">新窗口打开</a>
-  <span class="ver">脚本 geo-picker-1.1.4.js · 末级点击后出详情可复制</span>
+  <span class="ver">脚本 geo-picker-1.1.6.js · 末级结果见右侧</span>
 </div>
 <div class="layout">
   <iframe id="frame" title="GEO 选择器"></iframe>
@@ -72,7 +72,7 @@
       lang: lang,
       embed: '1',
       autoClose: '0',
-      _v: '1.1.4-' + Date.now()
+      _v: '1.1.6-' + Date.now()
     });
     return '/api/geo-picker.html?' + q.toString();
   }

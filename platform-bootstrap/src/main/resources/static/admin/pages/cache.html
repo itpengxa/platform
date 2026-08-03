@@ -12,7 +12,8 @@
     .stat b { display: block; font-size: 16px; margin-top: 4px; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
     input, select, textarea { padding: 6px 8px; border: 1px solid #d9d9d9; border-radius: 4px; }
-    textarea { width: 100%; min-height: 90px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+    textarea, pre.result { width: 100%; min-height: 220px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; box-sizing: border-box; }
+    pre.result { margin: 0; padding: 10px; background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
     .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; background: #1677ff; color: #fff; }
     .btn-danger { background: #ff4d4f; }
     .btn-secondary { background: #fff; color: #333; border: 1px solid #d9d9d9; }
@@ -23,6 +24,11 @@
     .msg.err { background: #fff2f0; color: #cf1322; border: 1px solid #ffccc7; }
     .msg.warn { background: #fffbe6; color: #d48806; border: 1px solid #ffe58f; }
     code { background: #f5f5f5; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+    .template { font-size: 12px; color: #666; font-family: ui-monospace, Menlo, monospace; }
+    .query-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 900px) { .query-grid { grid-template-columns: 1fr; } }
+    .meta { font-size: 12px; color: #666; margin-bottom: 8px; line-height: 1.6; }
+    .meta b { color: #333; }
   </style>
   <script src="../common/http.js"></script>
 </head>
@@ -60,15 +66,41 @@
 </div>
 
 <div class="card">
-  <h3>精确删除 Keys</h3>
-  <textarea id="keys" placeholder="每行一个 key，例如&#10;platform:geo:region:123&#10;platform:geo:path:123"></textarea>
-  <div class="row" style="margin-top:10px">
-    <button class="btn btn-secondary" onclick="doEvict(true)">预估</button>
-    <button class="btn btn-danger" onclick="doEvict(false)">删除</button>
+  <h3>缓存查询</h3>
+  <div class="query-grid">
+    <div>
+      <div class="row">
+        <label>选择业务 key
+          <select id="keyType" style="min-width:200px"></select>
+        </label>
+        <span class="template" id="keyTemplate"></span>
+      </div>
+      <div class="row" id="keyParams"></div>
+      <div class="row">
+        <button class="btn btn-secondary" type="button" onclick="buildKeyOnly()">生成 Key</button>
+      </div>
+      <div class="row">
+        <label style="flex:1">精确 Key
+          <input id="queryKey" style="width:100%; margin-top:4px; box-sizing:border-box" placeholder="platform:geo:region:123"/>
+        </label>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" type="button" onclick="doQuery()">查询</button>
+        <button class="btn btn-danger" type="button" onclick="doDeleteCurrent()">删除</button>
+      </div>
+      <div class="hint">从业务枚举生成完整 key，或直接粘贴精确 key 后查询。查询不回源 DB，只看本机 L1 与 Redis L2。删除仍走 evict（完整 key，不接受通配符）。</div>
+    </div>
+    <div>
+      <div class="meta" id="queryMeta">尚未查询</div>
+      <pre class="result" id="queryResult">查询结果将显示在这里</pre>
+    </div>
   </div>
 </div>
 
 <script>
+  let keyTypes = [];
+  let lastQueriedKey = '';
+
   function showMsg(text, type) {
     const el = document.getElementById('msg');
     el.textContent = text;
@@ -93,6 +125,163 @@
       ['Redis L2', s.redisEnabled ? 'on' : 'off'],
       ['广播', s.broadcastAvailable ? 'on' : 'off']
     ].map(([k, v]) => '<div class="stat">' + k + '<b>' + v + '</b></div>').join('');
+    if (Array.isArray(s.keyTypes) && s.keyTypes.length) {
+      keyTypes = s.keyTypes;
+      renderKeyTypeSelect();
+    }
+  }
+
+  async function loadKeyTypes() {
+    const list = await AdminHttp.api('/admin/geo/v1/cache/key-types');
+    keyTypes = list || [];
+    renderKeyTypeSelect();
+  }
+
+  function renderKeyTypeSelect() {
+    const sel = document.getElementById('keyType');
+    const prev = sel.value;
+    sel.innerHTML = keyTypes.map(t =>
+      '<option value="' + esc(t.code) + '">' + esc(t.label) + ' (' + esc(t.code) + ')</option>'
+    ).join('');
+    if (prev) sel.value = prev;
+    sel.onchange = onKeyTypeChange;
+    onKeyTypeChange();
+  }
+
+  function currentType() {
+    const code = document.getElementById('keyType').value;
+    return keyTypes.find(t => t.code === code) || null;
+  }
+
+  function onKeyTypeChange() {
+    const t = currentType();
+    document.getElementById('keyTemplate').textContent = t
+      ? (t.variableName + ' · ' + t.template)
+      : '';
+    const box = document.getElementById('keyParams');
+    box.innerHTML = '';
+    if (!t || !t.params) return;
+    t.params.forEach(p => {
+      const label = document.createElement('label');
+      label.textContent = p.label + ' ';
+      const input = document.createElement('input');
+      input.id = 'kp_' + p.name;
+      input.dataset.param = p.name;
+      input.placeholder = p.name + (p.required ? ' *' : '');
+      input.style.width = '140px';
+      label.appendChild(input);
+      box.appendChild(label);
+    });
+  }
+
+  function collectParams() {
+    const params = {};
+    document.querySelectorAll('#keyParams input[data-param]').forEach(el => {
+      params[el.dataset.param] = el.value.trim();
+    });
+    return params;
+  }
+
+  async function resolveKey() {
+    const manual = document.getElementById('queryKey').value.trim();
+    if (manual) return manual;
+    const t = currentType();
+    if (!t) throw new Error('请选择业务 key 或填写精确 Key');
+    const data = await AdminHttp.api('/admin/geo/v1/cache/build-key', {
+      method: 'POST',
+      body: JSON.stringify({ type: t.code, params: collectParams() })
+    });
+    document.getElementById('queryKey').value = data.key;
+    return data.key;
+  }
+
+  async function buildKeyOnly() {
+    try {
+      const t = currentType();
+      if (!t) {
+        showMsg('请选择业务 key', 'warn');
+        return;
+      }
+      const data = await AdminHttp.api('/admin/geo/v1/cache/build-key', {
+        method: 'POST',
+        body: JSON.stringify({ type: t.code, params: collectParams() })
+      });
+      document.getElementById('queryKey').value = data.key;
+      showMsg('已生成：' + data.key, 'ok');
+    } catch (e) {
+      showMsg(e.message || '生成失败', 'err');
+    }
+  }
+
+  function renderQueryResult(data) {
+    lastQueriedKey = data && data.key ? data.key : '';
+    const meta = document.getElementById('queryMeta');
+    if (!data) {
+      meta.textContent = '尚未查询';
+      document.getElementById('queryResult').textContent = '查询结果将显示在这里';
+      return;
+    }
+    meta.innerHTML =
+      'key=<b>' + esc(data.key) + '</b> · found=<b>' + esc(data.found) + '</b>'
+      + ' · source=<b>' + esc(data.source == null ? '-' : data.source) + '</b>'
+      + ' · L1=' + (data.l1Present ? (data.l1Negative ? 'negative' : 'hit') : 'miss')
+      + ' · L2=' + (data.l2Present ? (data.l2Negative ? 'negative' : 'hit') : 'miss');
+    const view = {
+      found: data.found,
+      source: data.source,
+      value: data.value,
+      l1: { present: data.l1Present, negative: data.l1Negative, value: data.l1Value },
+      l2: {
+        enabled: data.l2Enabled,
+        present: data.l2Present,
+        negative: data.l2Negative,
+        value: data.l2Value,
+        error: data.l2Error || null
+      }
+    };
+    document.getElementById('queryResult').textContent = JSON.stringify(view, null, 2);
+  }
+
+  async function doQuery() {
+    try {
+      const key = await resolveKey();
+      const data = await AdminHttp.api('/admin/geo/v1/cache/query', {
+        method: 'POST',
+        body: JSON.stringify({ key })
+      });
+      renderQueryResult(data);
+      showMsg(data.found ? '已命中缓存' : '未找到该 key（L1/L2 均无）', data.found ? 'ok' : 'warn');
+    } catch (e) {
+      showMsg(e.message || '查询失败', 'err');
+    }
+  }
+
+  async function doDeleteCurrent() {
+    try {
+      const key = (document.getElementById('queryKey').value.trim() || lastQueriedKey);
+      if (!key) {
+        showMsg('请先生成/填写 key 或完成一次查询', 'warn');
+        return;
+      }
+      if (!confirm('确认删除 key？\n' + key)) return;
+      const r = await AdminHttp.api('/admin/geo/v1/cache/evict', {
+        method: 'POST',
+        body: JSON.stringify({ keys: [key], dryRun: false })
+      });
+      showMsg(fmtResult(r), 'ok');
+      document.getElementById('queryKey').value = key;
+      // 删除后再查一次，右侧同步为空
+      try {
+        const data = await AdminHttp.api('/admin/geo/v1/cache/query', {
+          method: 'POST',
+          body: JSON.stringify({ key })
+        });
+        renderQueryResult(data);
+      } catch (_) { /* ignore */ }
+      loadStats();
+    } catch (e) {
+      showMsg(e.message || '删除失败', 'err');
+    }
   }
 
   async function doClear(dryRun) {
@@ -119,25 +308,6 @@
     }
   }
 
-  async function doEvict(dryRun) {
-    const keys = document.getElementById('keys').value.split(/\r?\n/)
-      .map(s => s.trim()).filter(Boolean);
-    if (!keys.length) {
-      showMsg('请填写至少一个 key', 'warn');
-      return;
-    }
-    if (!dryRun && !confirm('确认删除 ' + keys.length + ' 个 key？')) return;
-    try {
-      const r = await AdminHttp.api('/admin/geo/v1/cache/evict', {
-        method: 'POST', body: JSON.stringify({ keys, dryRun })
-      });
-      showMsg(fmtResult(r), dryRun ? 'warn' : 'ok');
-      if (!dryRun) loadStats();
-    } catch (e) {
-      showMsg(e.message || '失败', 'err');
-    }
-  }
-
   function numOrNull(v) {
     v = (v || '').trim();
     if (!v) return null;
@@ -145,7 +315,13 @@
     return Number.isFinite(n) ? n : null;
   }
 
-  loadStats().catch(e => showMsg(e.message || '加载失败', 'err'));
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  Promise.all([loadStats(), loadKeyTypes()]).catch(e => showMsg(e.message || '加载失败', 'err'));
 </script>
 </body>
 </html>

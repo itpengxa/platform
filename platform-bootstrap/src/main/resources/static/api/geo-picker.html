@@ -12,7 +12,7 @@
   </style>
 </head>
 <body>
-<script src="geo-picker-1.1.4.js"></script>
+<script src="geo-picker-1.1.6.js"></script>
 <script>
 (function () {
   var q = new URLSearchParams(location.search);
@@ -20,8 +20,8 @@
   var keepOpen = q.get('autoClose') === '0';
   if (embed) document.body.classList.add('embed-full');
 
-  if (!window.PlatformGeoPicker || PlatformGeoPicker.version !== '1.1.4') {
-    document.body.innerHTML = '<div style="padding:24px;color:#cf1322;font:14px sans-serif">选择器脚本未加载到 v1.1.4，请强制刷新（Cmd+Shift+R）。当前：'
+  if (!window.PlatformGeoPicker || PlatformGeoPicker.version !== '1.1.6') {
+    document.body.innerHTML = '<div style="padding:24px;color:#cf1322;font:14px sans-serif">选择器脚本未加载到 v1.1.6，请强制刷新（Cmd+Shift+R）。当前：'
       + (window.PlatformGeoPicker && PlatformGeoPicker.version ? PlatformGeoPicker.version : 'missing') + '</div>';
     return;
   }

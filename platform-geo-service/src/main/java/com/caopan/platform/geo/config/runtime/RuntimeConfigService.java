@@ -27,7 +27,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * 运行时配置：yml 默认 ∪ DB 覆盖，热生效。
@@ -36,6 +38,7 @@ import java.util.Set;
 public class RuntimeConfigService {
 
     private static final Logger log = LoggerFactory.getLogger(RuntimeConfigService.class);
+    private static final Pattern KEY_PATTERN = Pattern.compile("^[A-Za-z][A-Za-z0-9._-]{2,127}$");
 
     private final EffectiveConfigRegistry registry;
     private final ConfigCrypto crypto;
@@ -117,19 +120,71 @@ public class RuntimeConfigService {
     }
 
     public List<ConfigItemView> listAll() {
-        return ConfigDefinitions.all().stream().map(this::toView).toList();
+        return listGrouped().values().stream().flatMap(List::stream).toList();
     }
 
     public List<ConfigItemView> listGroup(String group) {
-        return ConfigDefinitions.byGroup(group).stream().map(this::toView).toList();
+        Map<String, List<ConfigItemView>> all = listGrouped();
+        return all.getOrDefault(group, List.of());
     }
 
     public Map<String, List<ConfigItemView>> listGrouped() {
         Map<String, List<ConfigItemView>> map = new LinkedHashMap<>();
         for (String g : ConfigDefinitions.groups()) {
-            map.put(g, listGroup(g));
+            map.put(g, new ArrayList<>(ConfigDefinitions.byGroup(g).stream().map(this::toView).toList()));
+        }
+        // DB 中未在静态注册表的「自定义」配置
+        try {
+            List<PlatformRuntimeConfig> rows = configMapper.findAll();
+            if (rows != null) {
+                for (PlatformRuntimeConfig row : rows) {
+                    if (row == null || !StringUtils.hasText(row.getConfigKey())) {
+                        continue;
+                    }
+                    if (ConfigDefinitions.find(row.getConfigKey()).isPresent()) {
+                        continue;
+                    }
+                    ConfigDefinition def = definitionFromRow(row);
+                    String g = def.group();
+                    map.computeIfAbsent(g, k -> new ArrayList<>()).add(toView(def, true));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("list custom configs failed: {}", e.getMessage());
         }
         return map;
+    }
+
+    /**
+     * 新增自定义配置（写入 DB；不在静态 ConfigDefinitions 中的键）。
+     */
+    @Transactional
+    public void createCustom(CreateConfigRequest req, String updatedBy) {
+        if (req == null || !StringUtils.hasText(req.key()) || !StringUtils.hasText(req.group())) {
+            throw new BizException(ErrorCode.PARAM_INVALID);
+        }
+        String key = req.key().trim();
+        if (!KEY_PATTERN.matcher(key).matches()) {
+            throw new BizException(ErrorCode.PARAM_INVALID);
+        }
+        if (ConfigDefinitions.find(key).isPresent()) {
+            throw new BizException(ErrorCode.PARAM_INVALID);
+        }
+        PlatformRuntimeConfig existing = configMapper.findByKey(key);
+        if (existing != null) {
+            throw new BizException(ErrorCode.PARAM_INVALID);
+        }
+        ConfigValueType type = parseType(req.valueType());
+        boolean secret = type == ConfigValueType.SECRET || Boolean.TRUE.equals(req.secret());
+        String group = req.group().trim();
+        String description = StringUtils.hasText(req.description()) ? req.description().trim() : key;
+        String raw = req.value() == null ? "" : req.value();
+        ConfigDefinition def = new ConfigDefinition(
+                key, group, type, secret, true, true, description, null, null, null);
+        String normalized = validateAndNormalize(def, raw);
+        upsertOne(def, normalized, updatedBy);
+        reloadFromDb();
+        broadcaster.publish();
     }
 
     @Transactional
@@ -142,7 +197,7 @@ public class RuntimeConfigService {
             if (item == null || !StringUtils.hasText(item.key())) {
                 continue;
             }
-            ConfigDefinition def = ConfigDefinitions.find(item.key())
+            ConfigDefinition def = resolveDefinition(item.key())
                     .orElseThrow(() -> new BizException(ErrorCode.PARAM_INVALID));
             if (!def.writable()) {
                 throw new BizException(ErrorCode.PARAM_INVALID);
@@ -187,7 +242,7 @@ public class RuntimeConfigService {
             throw new BizException(ErrorCode.PARAM_INVALID);
         }
         for (String key : keys) {
-            ConfigDefinition def = ConfigDefinitions.find(key)
+            ConfigDefinition def = resolveDefinition(key)
                     .orElseThrow(() -> new BizException(ErrorCode.PARAM_INVALID));
             resetOne(def, updatedBy);
         }
@@ -246,6 +301,10 @@ public class RuntimeConfigService {
     }
 
     private ConfigItemView toView(ConfigDefinition def) {
+        return toView(def, false);
+    }
+
+    private ConfigItemView toView(ConfigDefinition def, boolean custom) {
         String effective = registry.get(def.key());
         if (effective == null) {
             effective = buildDefaults().get(def.key());
@@ -260,12 +319,45 @@ public class RuntimeConfigService {
         } else {
             display = effective == null ? "" : effective;
         }
+        String source = custom ? "CUSTOM" : (overridden ? "DB" : "DEFAULT");
         return new ConfigItemView(
                 def.key(), def.group(), def.type().name(), def.secret(), def.hotReload(), def.writable(),
                 def.description(), def.min(), def.max(), def.enums(),
-                display, hasValue, masked, overridden,
-                overridden ? "DB" : "DEFAULT"
+                display, hasValue, masked, overridden || custom,
+                source, custom
         );
+    }
+
+    private Optional<ConfigDefinition> resolveDefinition(String key) {
+        Optional<ConfigDefinition> builtIn = ConfigDefinitions.find(key);
+        if (builtIn.isPresent()) {
+            return builtIn;
+        }
+        PlatformRuntimeConfig row = configMapper.findByKey(key);
+        if (row == null) {
+            return Optional.empty();
+        }
+        return Optional.of(definitionFromRow(row));
+    }
+
+    private static ConfigDefinition definitionFromRow(PlatformRuntimeConfig row) {
+        ConfigValueType type = parseType(row.getValueType());
+        boolean secret = row.getSecret() != null && row.getSecret() == 1 || type == ConfigValueType.SECRET;
+        String group = StringUtils.hasText(row.getConfigGroup()) ? row.getConfigGroup() : "custom";
+        String desc = StringUtils.hasText(row.getDescription()) ? row.getDescription() : row.getConfigKey();
+        return new ConfigDefinition(
+                row.getConfigKey(), group, type, secret, true, true, desc, null, null, null);
+    }
+
+    private static ConfigValueType parseType(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return ConfigValueType.STRING;
+        }
+        try {
+            return ConfigValueType.valueOf(raw.trim().toUpperCase());
+        } catch (Exception e) {
+            return ConfigValueType.STRING;
+        }
     }
 
     private String validateAndNormalize(ConfigDefinition def, String raw) {
@@ -384,6 +476,16 @@ public class RuntimeConfigService {
     public record ConfigWriteItem(String key, String value) {
     }
 
+    public record CreateConfigRequest(
+            String key,
+            String group,
+            String valueType,
+            String value,
+            String description,
+            Boolean secret
+    ) {
+    }
+
     public record ConfigItemView(
             String key,
             String group,
@@ -399,7 +501,8 @@ public class RuntimeConfigService {
             boolean hasValue,
             boolean masked,
             boolean overridden,
-            String source
+            String source,
+            boolean custom
     ) {
     }
 }

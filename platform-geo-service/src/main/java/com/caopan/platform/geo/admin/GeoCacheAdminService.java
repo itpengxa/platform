@@ -70,9 +70,28 @@ public class GeoCacheAdminService {
         }
         try {
             return type.buildKey(params);
-        } catch (IllegalArgumentException | NumberFormatException e) {
+        } catch (RuntimeException e) {
             throw new BizException(ErrorCode.PARAM_INVALID);
         }
+    }
+
+    /**
+     * 按精确 key 只读查询缓存内容（不回源 DB）。
+     * 支持直接传 key，或传业务枚举 type + params 拼装后再查。
+     */
+    public Map<String, Object> inspectKey(String key, String typeCode, Map<String, String> params) {
+        String resolved = key;
+        if (!StringUtils.hasText(resolved) && StringUtils.hasText(typeCode)) {
+            resolved = buildKey(typeCode, params);
+        }
+        if (!StringUtils.hasText(resolved)) {
+            throw new BizException(ErrorCode.PARAM_INVALID);
+        }
+        resolved = resolved.trim();
+        if (!GeoCacheKeys.isGeoDataKey(resolved)) {
+            throw new BizException(ErrorCode.PARAM_INVALID);
+        }
+        return tieredCache.inspect(resolved);
     }
 
     public ClearResult clear(ClearRequest req, String operator) {

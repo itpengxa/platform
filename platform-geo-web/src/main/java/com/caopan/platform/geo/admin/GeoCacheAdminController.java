@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -49,6 +50,20 @@ public class GeoCacheAdminController {
         return Result.ok(Map.of("key", key));
     }
 
+    /** 精确 key 查询缓存内容（不回源）。可传 key，或 type+params。 */
+    @GetMapping("/query")
+    public Result<Map<String, Object>> queryGet(@RequestParam(required = false) String key) {
+        return Result.ok(cacheAdminService.inspectKey(key, null, null));
+    }
+
+    @PostMapping("/query")
+    public Result<Map<String, Object>> queryPost(@RequestBody(required = false) QueryRequest body) {
+        return Result.ok(cacheAdminService.inspectKey(
+                body == null ? null : body.key(),
+                body == null ? null : body.type(),
+                body == null ? null : body.params()));
+    }
+
     @PostMapping("/clear")
     public Result<GeoCacheAdminService.ClearResult> clear(
             @RequestBody GeoCacheAdminService.ClearRequest body,
@@ -82,5 +97,8 @@ public class GeoCacheAdminController {
     }
 
     public record BuildKeyRequest(String type, Map<String, String> params) {
+    }
+
+    public record QueryRequest(String key, String type, Map<String, String> params) {
     }
 }
