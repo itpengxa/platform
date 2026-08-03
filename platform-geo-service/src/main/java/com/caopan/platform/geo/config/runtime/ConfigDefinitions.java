@@ -79,8 +79,10 @@ public final class ConfigDefinitions {
                 true, "管理员会话有效天数", 1, 365));
 
         // cache
-        reg(ConfigDefinition.readonly("platform.geo.cache.redis-enabled", "cache", ConfigValueType.BOOL,
-                false, "是否启用 Redis L2（改需重启）"));
+        reg(ConfigDefinition.of("platform.geo.cache.l1-enabled", "cache", ConfigValueType.BOOL,
+                false, true, true, "本地 L1 缓存开关（关则跳过本机缓存直走 L2/DB；关时清空本机 L1，便于容灾/控内存）"));
+        reg(ConfigDefinition.of("platform.geo.cache.redis-enabled", "cache", ConfigValueType.BOOL,
+                false, true, true, "Redis L2 缓存开关（关则降级 L1/DB；Redis 故障时关闭做容灾切换）"));
         reg(ConfigDefinition.readonly("platform.geo.cache.l1-maximum-size", "cache", ConfigValueType.LONG,
                 false, "L1 最大条目（改需重启）"));
         reg(ConfigDefinition.range("platform.geo.cache.l1-ttl-minutes", "cache", ConfigValueType.LONG,

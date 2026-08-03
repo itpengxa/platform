@@ -1,5 +1,6 @@
 package com.caopan.platform.geo.cache;
 
+import com.caopan.platform.geo.config.runtime.EffectiveCacheSettings;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
@@ -25,8 +26,7 @@ import java.util.function.Supplier;
 /**
  * 三级缓存实现（GEO-001 / platform-geo-service）。
  * <p>读路径：Caffeine (L1) → Redis (L2) → DB Loader (L3)。
- * L3 对同一 key 做 singleflight 防击穿；DB miss 写入短 TTL 负缓存防穿透。
- * Redis 故障时降级为 L1+DB。由 bootstrap {@code CacheConfig} 装配。</p>
+ * L1/L2 可通过运行时配置热开关（容灾 / 控内存）；L3 对同一 key 做 singleflight 防击穿。</p>
  */
 public class TieredCache {
 
@@ -39,60 +39,81 @@ public class TieredCache {
     private final Cache<String, Object> localCache;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
-    private final boolean redisEnabled;
+    /** Redis 客户端是否可用（与运行时开关无关） */
+    private final boolean redisAvailable;
     private final Duration negativeTtl;
+    private final EffectiveCacheSettings settings;
     private final ConcurrentHashMap<String, CompletableFuture<Object>> inflight = new ConcurrentHashMap<>();
 
     /**
-     * 注入依赖构造。
-     *
-     * @param localCache     L1 Caffeine
-     * @param redisTemplate  L2 Redis，可为 null（关闭 L2）
-     * @param objectMapper   JSON 序列化
-     * @param redisEnabled   是否启用 Redis L2
-     * @param negativeTtl    负缓存 TTL
+     * 测试/兼容构造：无运行时开关时，redisEnabled 同时表示 L2 是否开启。
      */
     public TieredCache(Cache<String, Object> localCache,
                        StringRedisTemplate redisTemplate,
                        ObjectMapper objectMapper,
                        boolean redisEnabled,
                        Duration negativeTtl) {
+        this(localCache, redisTemplate, objectMapper, redisEnabled, negativeTtl, null);
+    }
+
+    /**
+     * 注入依赖构造。
+     *
+     * @param localCache     L1 Caffeine
+     * @param redisTemplate  L2 Redis，可为 null
+     * @param objectMapper   JSON 序列化
+     * @param redisAvailable Redis 客户端是否可用
+     * @param negativeTtl    负缓存 TTL
+     * @param settings       运行时 L1/L2 开关；null 时 L1 恒开、L2 跟随 redisAvailable
+     */
+    public TieredCache(Cache<String, Object> localCache,
+                       StringRedisTemplate redisTemplate,
+                       ObjectMapper objectMapper,
+                       boolean redisAvailable,
+                       Duration negativeTtl,
+                       EffectiveCacheSettings settings) {
         this.localCache = localCache;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
-        this.redisEnabled = redisEnabled && redisTemplate != null;
+        this.redisAvailable = redisAvailable && redisTemplate != null;
         this.negativeTtl = negativeTtl == null || negativeTtl.isZero() || negativeTtl.isNegative()
                 ? Duration.ofSeconds(30)
                 : negativeTtl;
+        this.settings = settings;
+    }
+
+    /** 运行时是否启用本地 L1。 */
+    public boolean localEnabled() {
+        return settings == null || settings.l1Enabled();
+    }
+
+    /** 运行时是否启用 Redis L2。 */
+    public boolean redisEnabled() {
+        return redisAvailable && (settings == null || settings.redisEnabled());
     }
 
     /**
      * 三级读取：L1 → L2 → L3(dbLoader)；命中后按层回填。
-     *
-     * @param key      缓存键
-     * @param type     反序列化类型
-     * @param l2Ttl    L2 TTL（可带抖动）
-     * @param dbLoader L3 加载器；返回 null 则写负缓存
-     * @param <T>      值类型
-     * @return 缓存值；负缓存命中返回 null
      */
     @SuppressWarnings("unchecked")
     public <T> T get(String key, TypeReference<T> type, Duration l2Ttl, Supplier<T> dbLoader) {
-        Object local = localCache.getIfPresent(key);
-        if (local != null) {
-            if (local == NULL_SENTINEL) {
-                log.debug("L1 negative hit, key={}", key);
-                return null;
+        if (localEnabled()) {
+            Object local = localCache.getIfPresent(key);
+            if (local != null) {
+                if (local == NULL_SENTINEL) {
+                    log.debug("L1 negative hit, key={}", key);
+                    return null;
+                }
+                log.debug("L1 hit, key={}", key);
+                return cast(local, type);
             }
-            log.debug("L1 hit, key={}", key);
-            return cast(local, type);
         }
 
         RedisGet<T> redisGet = getFromRedis(key, type);
         if (redisGet.hit) {
             if (redisGet.negative) {
                 log.debug("L2 negative hit, key={}", key);
-                localCache.put(key, NULL_SENTINEL);
+                putLocalNegative(key);
                 return null;
             }
             log.debug("L2 hit, key={}", key);
@@ -144,10 +165,6 @@ public class TieredCache {
 
     /**
      * 主动写入 L1+L2（value 为 null 时改写负缓存）。
-     *
-     * @param key   缓存键
-     * @param value 缓存值
-     * @param l2Ttl L2 TTL
      */
     public void put(String key, Object value, Duration l2Ttl) {
         if (value == null) {
@@ -155,17 +172,15 @@ public class TieredCache {
             return;
         }
         putRedis(key, value, l2Ttl);
-        localCache.put(key, value);
+        putLocal(key, value);
     }
 
     /**
      * 写入负缓存（L1 哨兵 + L2 {@code __NULL__}）。
-     *
-     * @param key 缓存键
      */
     public void putNegative(String key) {
-        localCache.put(key, NULL_SENTINEL);
-        if (!redisEnabled) {
+        putLocalNegative(key);
+        if (!redisEnabled()) {
             return;
         }
         try {
@@ -173,6 +188,20 @@ public class TieredCache {
         } catch (Exception e) {
             log.warn("L2 negative put failed, key={}, err={}", key, e.toString());
         }
+    }
+
+    private void putLocal(String key, Object value) {
+        if (!localEnabled() || key == null || value == null) {
+            return;
+        }
+        localCache.put(key, value);
+    }
+
+    private void putLocalNegative(String key) {
+        if (!localEnabled() || key == null) {
+            return;
+        }
+        localCache.put(key, NULL_SENTINEL);
     }
 
     /**
@@ -205,10 +234,6 @@ public class TieredCache {
         localCache.invalidateAll();
     }
 
-    public boolean redisEnabled() {
-        return redisEnabled;
-    }
-
     public long localEstimatedSize() {
         return localCache.estimatedSize();
     }
@@ -219,24 +244,31 @@ public class TieredCache {
     public Map<String, Object> inspect(String key) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("key", key);
+        m.put("l1Enabled", localEnabled());
+        m.put("l2Enabled", redisEnabled());
 
-        Object local = localCache.getIfPresent(key);
-        if (local == null) {
+        if (localEnabled()) {
+            Object local = localCache.getIfPresent(key);
+            if (local == null) {
+                m.put("l1Present", false);
+                m.put("l1Negative", false);
+                m.put("l1Value", null);
+            } else if (local == NULL_SENTINEL) {
+                m.put("l1Present", true);
+                m.put("l1Negative", true);
+                m.put("l1Value", null);
+            } else {
+                m.put("l1Present", true);
+                m.put("l1Negative", false);
+                m.put("l1Value", toInspectValue(local));
+            }
+        } else {
             m.put("l1Present", false);
             m.put("l1Negative", false);
             m.put("l1Value", null);
-        } else if (local == NULL_SENTINEL) {
-            m.put("l1Present", true);
-            m.put("l1Negative", true);
-            m.put("l1Value", null);
-        } else {
-            m.put("l1Present", true);
-            m.put("l1Negative", false);
-            m.put("l1Value", toInspectValue(local));
         }
 
-        m.put("l2Enabled", redisEnabled);
-        if (!redisEnabled) {
+        if (!redisEnabled()) {
             m.put("l2Present", false);
             m.put("l2Negative", false);
             m.put("l2Raw", null);
@@ -315,7 +347,7 @@ public class TieredCache {
      * @return 匹配（或已删除）键数量
      */
     public long clearRedisByPatterns(Collection<String> patterns, boolean dryRun) {
-        if (!redisEnabled || patterns == null || patterns.isEmpty()) {
+        if (!redisEnabled() || patterns == null || patterns.isEmpty()) {
             return 0L;
         }
         Set<String> matched = scanRedisKeys(patterns);
@@ -330,7 +362,7 @@ public class TieredCache {
      */
     public Set<String> scanRedisKeys(Collection<String> patterns) {
         Set<String> matched = new HashSet<>();
-        if (!redisEnabled || patterns == null) {
+        if (!redisEnabled() || patterns == null) {
             return matched;
         }
         for (String pattern : patterns) {
@@ -356,7 +388,7 @@ public class TieredCache {
      * 精确删除 L2 键列表；跳过非 geo 数据键与 rl。
      */
     public long deleteRedisKeysExact(Collection<String> keys, boolean dryRun) {
-        if (!redisEnabled || keys == null || keys.isEmpty()) {
+        if (!redisEnabled() || keys == null || keys.isEmpty()) {
             return 0L;
         }
         List<String> safe = new ArrayList<>();
@@ -372,7 +404,7 @@ public class TieredCache {
     }
 
     private void deleteRedisKey(String key) {
-        if (!redisEnabled || key == null) {
+        if (!redisEnabled() || key == null) {
             return;
         }
         try {
@@ -383,7 +415,7 @@ public class TieredCache {
     }
 
     private long deleteRedisKeys(Collection<String> keys) {
-        if (!redisEnabled || keys == null || keys.isEmpty()) {
+        if (!redisEnabled() || keys == null || keys.isEmpty()) {
             return 0L;
         }
         try {
@@ -419,7 +451,7 @@ public class TieredCache {
     }
 
     private <T> RedisGet<T> getFromRedis(String key, TypeReference<T> type) {
-        if (!redisEnabled) {
+        if (!redisEnabled()) {
             return new RedisGet<>(false, false, null);
         }
         try {
@@ -438,7 +470,7 @@ public class TieredCache {
     }
 
     private void putRedis(String key, Object value, Duration ttl) {
-        if (!redisEnabled) {
+        if (!redisEnabled()) {
             return;
         }
         try {
@@ -453,8 +485,14 @@ public class TieredCache {
     }
 
     private void asyncPutLocal(String key, Object value) {
+        if (!localEnabled()) {
+            return;
+        }
         Thread.startVirtualThread(() -> {
             try {
+                if (!localEnabled()) {
+                    return;
+                }
                 localCache.put(key, value);
                 log.debug("L1 async warm done, key={}", key);
             } catch (Exception e) {

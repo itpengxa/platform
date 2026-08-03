@@ -45,6 +45,7 @@ public class GeoCacheAdminService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("instanceId", broadcaster.instanceId());
         m.put("redisEnabled", tieredCache.redisEnabled());
+        m.put("l1Enabled", tieredCache.localEnabled());
         m.put("broadcastAvailable", broadcaster.isBroadcastAvailable());
         m.put("localEstimatedSize", tieredCache.localEstimatedSize());
         m.put("supportedScopes", List.of(

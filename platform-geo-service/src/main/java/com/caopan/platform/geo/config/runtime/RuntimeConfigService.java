@@ -3,6 +3,7 @@ package com.caopan.platform.geo.config.runtime;
 import com.caopan.platform.common.exception.BizException;
 import com.caopan.platform.common.exception.ErrorCode;
 import com.caopan.platform.geo.cache.GeoCacheProperties;
+import com.caopan.platform.geo.cache.TieredCache;
 import com.caopan.platform.geo.config.GeoAccessLogProperties;
 import com.caopan.platform.geo.config.GeoAdminProperties;
 import com.caopan.platform.geo.config.GeoAuthProperties;
@@ -14,6 +15,7 @@ import com.caopan.platform.geo.mapper.PlatformRuntimeConfigMapper;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,6 +54,7 @@ public class RuntimeConfigService {
     private final GeoAccessLogProperties accessLogDefaults;
     private final GeoAdminProperties adminDefaults;
     private final GeoCacheProperties cacheDefaults;
+    private final ObjectProvider<TieredCache> tieredCacheProvider;
 
     public RuntimeConfigService(
             EffectiveConfigRegistry registry,
@@ -64,7 +67,8 @@ public class RuntimeConfigService {
             GeoAuthProperties authDefaults,
             GeoAccessLogProperties accessLogDefaults,
             GeoAdminProperties adminDefaults,
-            GeoCacheProperties cacheDefaults) {
+            GeoCacheProperties cacheDefaults,
+            ObjectProvider<TieredCache> tieredCacheProvider) {
         this.registry = registry;
         this.crypto = crypto;
         this.configMapper = configMapper;
@@ -76,6 +80,7 @@ public class RuntimeConfigService {
         this.accessLogDefaults = accessLogDefaults;
         this.adminDefaults = adminDefaults;
         this.cacheDefaults = cacheDefaults;
+        this.tieredCacheProvider = tieredCacheProvider;
     }
 
     @PostConstruct
@@ -97,6 +102,7 @@ public class RuntimeConfigService {
         } catch (Exception e) {
             log.warn("platform_runtime_config unavailable, using yml defaults only: {}", e.getMessage());
             registry.replaceAll(effective, overridden);
+            applyCacheSwitches();
             return;
         }
         if (rows != null) {
@@ -117,6 +123,23 @@ public class RuntimeConfigService {
         }
         registry.replaceAll(effective, overridden);
         log.info("runtime config loaded, keys={}, overridden={}", effective.size(), overridden.size());
+        applyCacheSwitches();
+    }
+
+    /** L1 关闭时清空本机缓存，释放内存；开关本身由 EffectiveCacheSettings 即时生效。 */
+    private void applyCacheSwitches() {
+        TieredCache cache = tieredCacheProvider == null ? null : tieredCacheProvider.getIfAvailable();
+        if (cache == null) {
+            return;
+        }
+        boolean l1 = registry.getBool("platform.geo.cache.l1-enabled", true);
+        boolean l2 = registry.getBool("platform.geo.cache.redis-enabled", true);
+        if (!l1) {
+            cache.invalidateLocalAll();
+            log.info("cache switch applied: L1=off (local cleared), L2={}", l2 ? "on" : "off");
+        } else {
+            log.info("cache switch applied: L1=on, L2={}", l2 ? "on" : "off");
+        }
     }
 
     public List<ConfigItemView> listAll() {
@@ -455,6 +478,7 @@ public class RuntimeConfigService {
         m.put("platform.geo.admin.session-ttl-days", String.valueOf(adminDefaults.sessionTtlDays()));
 
         m.put("platform.geo.cache.redis-enabled", String.valueOf(cacheDefaults.redisEnabled()));
+        m.put("platform.geo.cache.l1-enabled", String.valueOf(cacheDefaults.l1Enabled()));
         m.put("platform.geo.cache.l1-maximum-size", String.valueOf(cacheDefaults.l1MaximumSize()));
         m.put("platform.geo.cache.l1-ttl-minutes", String.valueOf(cacheDefaults.l1TtlMinutes()));
         m.put("platform.geo.cache.countries-ttl-hours", String.valueOf(cacheDefaults.countriesTtlHours()));

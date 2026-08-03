@@ -18,6 +18,10 @@ public class EffectiveCacheSettings {
         return registry.getBool("platform.geo.cache.redis-enabled", true);
     }
 
+    public boolean l1Enabled() {
+        return registry.getBool("platform.geo.cache.l1-enabled", true);
+    }
+
     public long l1MaximumSize() {
         return registry.getLong("platform.geo.cache.l1-maximum-size", 10000L);
     }

@@ -1,10 +1,9 @@
 package com.caopan.platform.geo.admin;
 
 import com.caopan.platform.common.api.Result;
-import com.caopan.platform.geo.access.AdminSessionCaller;
-import com.caopan.platform.geo.admin.access.AdminAuthService;
+import com.caopan.platform.geo.admin.AdminOperationLogService.RecordRequest;
+import com.caopan.platform.geo.admin.support.AdminOperatorResolver;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -14,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 地理数据缓存管理 API（L1 + L2 + 集群广播）。
@@ -23,11 +23,16 @@ import java.util.Map;
 public class GeoCacheAdminController {
 
     private final GeoCacheAdminService cacheAdminService;
-    private final AdminAuthService adminAuthService;
+    private final AdminOperationLogService operationLogService;
+    private final AdminOperatorResolver operatorResolver;
 
-    public GeoCacheAdminController(GeoCacheAdminService cacheAdminService, AdminAuthService adminAuthService) {
+    public GeoCacheAdminController(
+            GeoCacheAdminService cacheAdminService,
+            AdminOperationLogService operationLogService,
+            AdminOperatorResolver operatorResolver) {
         this.cacheAdminService = cacheAdminService;
-        this.adminAuthService = adminAuthService;
+        this.operationLogService = operationLogService;
+        this.operatorResolver = operatorResolver;
     }
 
     @GetMapping("/stats")
@@ -35,13 +40,11 @@ public class GeoCacheAdminController {
         return Result.ok(cacheAdminService.stats());
     }
 
-    /** 全部缓存业务变量名与 key 模板（下拉数据源）。 */
     @GetMapping("/key-types")
     public Result<List<Map<String, Object>>> keyTypes() {
         return Result.ok(cacheAdminService.listKeyTypes());
     }
 
-    /** 按业务枚举拼装完整 Redis key。 */
     @PostMapping("/build-key")
     public Result<Map<String, String>> buildKey(@RequestBody BuildKeyRequest body) {
         String key = cacheAdminService.buildKey(
@@ -50,7 +53,6 @@ public class GeoCacheAdminController {
         return Result.ok(Map.of("key", key));
     }
 
-    /** 精确 key 查询缓存内容（不回源）。可传 key，或 type+params。 */
     @GetMapping("/query")
     public Result<Map<String, Object>> queryGet(@RequestParam(required = false) String key) {
         return Result.ok(cacheAdminService.inspectKey(key, null, null));
@@ -68,28 +70,73 @@ public class GeoCacheAdminController {
     public Result<GeoCacheAdminService.ClearResult> clear(
             @RequestBody GeoCacheAdminService.ClearRequest body,
             HttpServletRequest request) {
-        return Result.ok(cacheAdminService.clear(body, resolveOperator(request)));
+        AdminOperatorResolver.Resolved op = operatorResolver.resolve(request);
+        long start = System.currentTimeMillis();
+        boolean dryRun = body != null && Boolean.TRUE.equals(body.dryRun());
+        try {
+            GeoCacheAdminService.ClearResult result = cacheAdminService.clear(body, op.operator());
+            int cost = (int) (System.currentTimeMillis() - start);
+            if (!dryRun) {
+                operationLogService.record(RecordRequest.ok(
+                        "cache", "CLEAR", "geo_cache",
+                        body == null ? null : body.scope(),
+                        "scope=" + (body == null ? null : body.scope())
+                                + ", country=" + (body == null ? null : body.countryCode())
+                                + ", regionId=" + (body == null ? null : body.regionId())
+                                + ", deleted=" + result.deletedRedisKeys()
+                                + ", broadcast=" + result.broadcast(),
+                        null, null,
+                        op.operator(), op.operatorId(), op.clientIp(), cost));
+            }
+            return Result.ok(result);
+        } catch (RuntimeException e) {
+            int cost = (int) (System.currentTimeMillis() - start);
+            if (!dryRun) {
+                operationLogService.record(RecordRequest.fail(
+                        "cache", "CLEAR", "geo_cache",
+                        body == null ? null : body.scope(),
+                        "scope=" + (body == null ? null : body.scope()),
+                        e.getMessage(),
+                        op.operator(), op.operatorId(), op.clientIp(), cost));
+            }
+            throw e;
+        }
     }
 
     @PostMapping("/evict")
     public Result<GeoCacheAdminService.ClearResult> evict(
             @RequestBody EvictRequest body,
             HttpServletRequest request) {
+        AdminOperatorResolver.Resolved op = operatorResolver.resolve(request);
+        long start = System.currentTimeMillis();
         boolean dryRun = body != null && Boolean.TRUE.equals(body.dryRun());
         List<String> keys = body == null ? null : body.keys();
-        return Result.ok(cacheAdminService.evictKeys(keys, dryRun, resolveOperator(request)));
-    }
-
-    private String resolveOperator(HttpServletRequest request) {
-        String token = AdminAuthController.extractToken(request);
-        if (!StringUtils.hasText(token)) {
-            return "unknown";
+        String keySummary = keys == null ? "" : keys.stream().limit(20).collect(Collectors.joining(","));
+        if (keys != null && keys.size() > 20) {
+            keySummary = keySummary + ",...(" + keys.size() + ")";
         }
         try {
-            AdminSessionCaller caller = adminAuthService.requireSession(token);
-            return caller.username();
-        } catch (Exception e) {
-            return "legacy-secret";
+            GeoCacheAdminService.ClearResult result =
+                    cacheAdminService.evictKeys(keys, dryRun, op.operator());
+            int cost = (int) (System.currentTimeMillis() - start);
+            if (!dryRun) {
+                operationLogService.record(RecordRequest.ok(
+                        "cache", "EVICT", "geo_cache",
+                        keys != null && keys.size() == 1 ? keys.get(0) : ("count=" + (keys == null ? 0 : keys.size())),
+                        "keys=[" + keySummary + "], deleted=" + result.deletedRedisKeys(),
+                        null, null,
+                        op.operator(), op.operatorId(), op.clientIp(), cost));
+            }
+            return Result.ok(result);
+        } catch (RuntimeException e) {
+            int cost = (int) (System.currentTimeMillis() - start);
+            if (!dryRun) {
+                operationLogService.record(RecordRequest.fail(
+                        "cache", "EVICT", "geo_cache", null,
+                        "keys=[" + keySummary + "]", e.getMessage(),
+                        op.operator(), op.operatorId(), op.clientIp(), cost));
+            }
+            throw e;
         }
     }
 

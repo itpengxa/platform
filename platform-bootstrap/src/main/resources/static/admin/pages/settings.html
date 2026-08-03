@@ -4,64 +4,223 @@
   <meta charset="UTF-8"/>
   <title>系统配置</title>
   <style>
-    body { margin: 0; padding: 16px; font-family: sans-serif; background: #f5f7fa; color: #333; }
-    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
-    .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; background: #1677ff; color: #fff; }
-    .btn:disabled { opacity: .5; cursor: not-allowed; }
-    .btn-secondary { background: #fff; color: #333; border: 1px solid #d9d9d9; }
-    .btn-danger { background: #fff; color: #cf1322; border: 1px solid #ffa39e; }
-    .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; }
-    .tab {
-      padding: 8px 14px; border: 1px solid #d9d9d9; background: #fff; border-radius: 4px 4px 0 0;
-      cursor: pointer; font-size: 13px;
+    :root {
+      --bg: #f0f2f5;
+      --card: #fff;
+      --line: #e8ecf0;
+      --text: #1f2329;
+      --muted: #8a9199;
+      --subtle: #646a73;
+      --primary: #1677ff;
+      --primary-soft: #e8f3ff;
+      --success: #52c41a;
+      --success-deep: #389e0d;
+      --danger: #f5222d;
+      --radius: 10px;
+      --shadow: 0 1px 2px rgba(31, 35, 41, .04), 0 4px 12px rgba(31, 35, 41, .04);
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+        'Microsoft YaHei', sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     }
-    .tab.active { color: #1677ff; border-bottom-color: #fff; background: #fff; font-weight: 600; }
-    .panel { background: #fff; border: 1px solid #e8e8e8; border-radius: 0 6px 6px 6px; padding: 16px; }
-    .item { border-bottom: 1px solid #f0f0f0; padding: 12px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 20px 22px 28px;
+      font-family: var(--font); background: var(--bg); color: var(--text);
+      font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+    }
+
+    .toolbar {
+      display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+      margin-bottom: 14px; padding: 14px 16px; background: var(--card);
+      border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+    }
+    .toolbar .hint-inline {
+      flex: 1 1 200px; font-size: 12px; color: var(--muted); line-height: 1.5; min-width: 160px;
+    }
+    .search-wrap {
+      display: flex; align-items: center; gap: 8px; margin-left: auto;
+      flex: 1 1 240px; max-width: 360px; position: relative;
+    }
+    .search-wrap input {
+      width: 100%; height: 36px; padding: 0 34px 0 12px;
+      border: 1px solid #d0d5dd; border-radius: 8px; font: inherit; outline: none;
+      background: #fff; transition: border-color .15s, box-shadow .15s;
+    }
+    .search-wrap input:focus {
+      border-color: var(--primary); box-shadow: 0 0 0 3px rgba(22, 119, 255, .15);
+    }
+    .search-wrap .clear-btn {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      width: 22px; height: 22px; border: none; border-radius: 50%;
+      background: #eef0f3; color: #666; cursor: pointer; font-size: 14px; line-height: 1;
+      display: none; align-items: center; justify-content: center; padding: 0;
+    }
+    .search-wrap.has-value .clear-btn { display: inline-flex; }
+    .search-wrap .clear-btn:hover { background: #e0e3e8; }
+
+    .btn {
+      height: 36px; padding: 0 16px; border: none; border-radius: 8px; cursor: pointer;
+      font: inherit; font-size: 13px; font-weight: 550; letter-spacing: .2px;
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: background .15s, border-color .15s, color .15s, box-shadow .15s, transform .05s;
+      user-select: none; white-space: nowrap;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    .btn-success {
+      background: var(--success); color: #fff;
+      box-shadow: 0 1px 2px rgba(82, 196, 26, .28);
+    }
+    .btn-success:hover:not(:disabled) { background: var(--success-deep); }
+    .btn-primary {
+      background: var(--primary); color: #fff;
+      box-shadow: 0 1px 2px rgba(22, 119, 255, .25);
+    }
+    .btn-primary:hover:not(:disabled) { background: #0958d9; }
+    .btn-secondary {
+      background: #fff; color: var(--text); border: 1px solid #d0d5dd;
+    }
+    .btn-secondary:hover:not(:disabled) {
+      border-color: var(--primary); color: var(--primary); background: var(--primary-soft);
+    }
+    .btn-danger {
+      height: 30px; padding: 0 12px; background: #fff1f0; color: #cf1322;
+      border: 1px solid #ffccc7; font-size: 12px; font-weight: 500;
+    }
+    .btn-danger:hover:not(:disabled) { background: #ffe7e6; border-color: #ffa39e; }
+
+    .msg {
+      display: none; margin-bottom: 12px; padding: 10px 14px; border-radius: 8px;
+      font-size: 13px; border: 1px solid transparent;
+    }
+    .msg.show { display: block; }
+    .msg.ok { background: #f6ffed; color: #389e0d; border-color: #b7eb8f; }
+    .msg.err { background: #fff2f0; color: #cf1322; border-color: #ffccc7; }
+    .msg.warn { background: #fffbe6; color: #d48806; border-color: #ffe58f; }
+
+    .tabs {
+      display: flex; gap: 6px; flex-wrap: wrap; padding: 0 4px;
+      margin-bottom: 0; border-bottom: 1px solid var(--line);
+    }
+    .tab {
+      padding: 10px 16px; border: none; background: transparent; border-radius: 8px 8px 0 0;
+      cursor: pointer; font: inherit; font-size: 13px; color: var(--subtle);
+      position: relative; margin-bottom: -1px;
+    }
+    .tab:hover { color: var(--primary); background: rgba(22, 119, 255, .04); }
+    .tab.active {
+      color: var(--primary); font-weight: 600; background: var(--card);
+      border: 1px solid var(--line); border-bottom-color: var(--card);
+    }
+
+    .panel {
+      background: var(--card); border: 1px solid var(--line); border-top: none;
+      border-radius: 0 0 var(--radius) var(--radius); padding: 4px 18px 8px;
+      box-shadow: var(--shadow); min-height: 120px;
+    }
+    .empty {
+      padding: 36px 12px; text-align: center; color: var(--muted); font-size: 13px;
+    }
+
+    .item {
+      border-bottom: 1px solid #f0f2f5; padding: 16px 4px;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start;
+    }
     .item:last-child { border-bottom: none; }
     .meta { min-width: 0; }
-    .meta .key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #666; word-break: break-all; }
-    .meta .desc { font-size: 14px; margin: 4px 0; }
-    .meta .flags { font-size: 12px; color: #888; display: flex; gap: 8px; flex-wrap: wrap; }
-    .tag { padding: 1px 6px; border-radius: 3px; background: #f5f5f5; }
-    .tag-db { background: #e6f4ff; color: #1677ff; }
+    .meta .desc { font-size: 14px; font-weight: 600; color: var(--text); margin: 0 0 6px; }
+    .meta .key {
+      font-family: var(--mono); font-size: 12px; color: var(--muted);
+      word-break: break-all; line-height: 1.45;
+    }
+    .meta .flags { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+    .tag {
+      display: inline-flex; align-items: center; height: 22px; padding: 0 8px;
+      border-radius: 999px; font-size: 11px; font-weight: 600; background: #f3f5f7; color: #646a73;
+    }
+    .tag-db { background: var(--primary-soft); color: var(--primary); }
     .tag-warn { background: #fff7e6; color: #d46b08; }
     .tag-ro { background: #fafafa; color: #999; }
+
     .control { min-width: 0; }
-    .control input, .control select { width: 100%; padding: 6px 8px; border: 1px solid #d9d9d9; border-radius: 4px; box-sizing: border-box; }
-    .control .hint { font-size: 12px; color: #888; margin-top: 4px; }
-    .control .actions { margin-top: 6px; display: flex; gap: 6px; }
-    .msg { margin-bottom: 12px; padding: 8px 12px; border-radius: 4px; display: none; font-size: 13px; }
-    .msg.show { display: block; }
-    .msg.ok { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; }
-    .msg.err { background: #fff2f0; color: #cf1322; border: 1px solid #ffccc7; }
-    .msg.warn { background: #fffbe6; color: #d48806; border: 1px solid #ffe58f; }
+    .control input, .control select {
+      width: 100%; height: 36px; padding: 0 11px; border: 1px solid #d0d5dd;
+      border-radius: 8px; font: inherit; outline: none; background: #fff;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .control input:hover, .control select:hover { border-color: #b8c0cc; }
+    .control input:focus, .control select:focus {
+      border-color: var(--primary); box-shadow: 0 0 0 3px rgba(22, 119, 255, .15);
+    }
+    .control input:disabled { background: #f5f6f8; color: #999; cursor: not-allowed; }
+    .control .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+    .control .actions { margin-top: 8px; display: flex; gap: 6px; }
+
+    .filter-bar {
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+      padding: 10px 4px 4px; font-size: 12px; color: var(--muted);
+    }
+    .filter-bar strong { color: var(--subtle); font-weight: 600; }
+
+    .modal-mask {
+      display: none; position: fixed; inset: 0; background: rgba(15, 20, 25, .45);
+      z-index: 20; align-items: center; justify-content: center; padding: 16px;
+    }
+    .modal {
+      width: min(480px, 92vw); background: #fff; border-radius: 12px; padding: 20px;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, .18);
+    }
+    .modal h3 { margin: 0 0 14px; font-size: 16px; font-weight: 650; }
+    .modal .form { display: grid; gap: 12px; }
+    .modal label {
+      display: flex; flex-direction: column; gap: 6px; font-size: 12px;
+      color: var(--subtle); font-weight: 500;
+    }
+    .modal input, .modal select {
+      height: 36px; padding: 0 11px; border: 1px solid #d0d5dd; border-radius: 8px;
+      font: inherit; outline: none;
+    }
+    .modal input:focus, .modal select:focus {
+      border-color: var(--primary); box-shadow: 0 0 0 3px rgba(22, 119, 255, .15);
+    }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+    .modal .foot { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.55; }
+
+    mark.hit {
+      background: #fff1b8; color: inherit; padding: 0 1px; border-radius: 2px;
+    }
   </style>
   <script src="../common/http.js"></script>
   <script src="../common/pager.js"></script>
 </head>
 <body>
 <div class="toolbar">
-  <button class="btn" id="btnSave" onclick="saveAll()">保存当前分组</button>
-  <button class="btn btn-secondary" onclick="openCreate()">新增配置</button>
+  <button class="btn btn-success" id="btnSave" onclick="saveAll()">保存当前分组</button>
+  <button class="btn btn-primary" onclick="openCreate()">新增配置</button>
   <button class="btn btn-secondary" onclick="reload()">从库重载</button>
-  <span style="font-size:12px;color:#888">密钥项留空表示不修改；可「恢复默认」清除 DB 覆盖；自定义项可删除</span>
+  <span class="hint-inline">密钥项留空表示不修改；可「恢复默认」清除 DB 覆盖；自定义项可删除</span>
+  <div class="search-wrap" id="searchWrap">
+    <input id="searchInput" type="search" placeholder="搜索键名 / 说明 / 当前值" autocomplete="off"/>
+    <button type="button" class="clear-btn" title="清除" onclick="clearSearch()">×</button>
+  </div>
 </div>
 <div id="msg" class="msg"></div>
 <div class="tabs" id="tabs"></div>
 <div class="panel" id="panel"></div>
 <div id="pager"></div>
 
-<div id="createMask" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:20;align-items:center;justify-content:center">
-  <div style="width:min(480px,92vw);background:#fff;border-radius:8px;padding:16px;box-shadow:0 8px 28px rgba(0,0,0,.18)">
-    <h3 style="margin:0 0 12px;font-size:16px">新增配置</h3>
-    <div style="display:grid;gap:8px;font-size:13px">
-      <label>配置键 *<input id="cKey" placeholder="platform.custom.example" style="width:100%;padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px;box-sizing:border-box"/></label>
+<div id="createMask" class="modal-mask">
+  <div class="modal">
+    <h3>新增配置</h3>
+    <div class="form">
+      <label>配置键 *
+        <input id="cKey" placeholder="platform.custom.example"/>
+      </label>
       <label>分组 *
-        <select id="cGroup" style="width:100%;padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px"></select>
+        <select id="cGroup"></select>
       </label>
       <label>类型
-        <select id="cType" style="width:100%;padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px">
+        <select id="cType">
           <option value="STRING">STRING</option>
           <option value="BOOL">BOOL</option>
           <option value="INT">INT</option>
@@ -70,14 +229,18 @@
           <option value="SECRET">SECRET</option>
         </select>
       </label>
-      <label>初始值 *<input id="cValue" placeholder="value" style="width:100%;padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px;box-sizing:border-box"/></label>
-      <label>说明<input id="cDesc" placeholder="可选描述" style="width:100%;padding:6px 8px;border:1px solid #d9d9d9;border-radius:4px;box-sizing:border-box"/></label>
+      <label>初始值 *
+        <input id="cValue" placeholder="value"/>
+      </label>
+      <label>说明
+        <input id="cDesc" placeholder="可选描述"/>
+      </label>
     </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+    <div class="modal-actions">
       <button type="button" class="btn btn-secondary" onclick="closeCreate()">取消</button>
-      <button type="button" class="btn" onclick="submitCreate()">创建</button>
+      <button type="button" class="btn btn-primary" onclick="submitCreate()">创建</button>
     </div>
-    <div style="margin-top:8px;font-size:12px;color:#888">仅可新增未在代码注册表中的键；写入 DB 后出现在对应分组，热生效（业务代码需自行读取 registry）。</div>
+    <div class="foot">仅可新增未在代码注册表中的键；写入 DB 后出现在对应分组，热生效（业务代码需自行读取 registry）。</div>
   </div>
 </div>
 
@@ -91,15 +254,37 @@
     cache: '缓存',
     custom: '自定义'
   };
-  const CLEAR = '__CLEAR__';
   let groups = {};
   let currentGroup = 'report';
-  const drafts = {}; // key -> draft value string
+  let searchQuery = '';
+  const drafts = {};
   const pager = AdminPager.mount('pager', {
     pageSize: 10,
     sizeOptions: [10, 20, 50, 100],
     onChange: () => renderPanel()
   });
+
+  const searchInput = document.getElementById('searchInput');
+  const searchWrap = document.getElementById('searchWrap');
+  let searchTimer = null;
+  searchInput.addEventListener('input', () => {
+    searchWrap.classList.toggle('has-value', !!searchInput.value.trim());
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      searchQuery = searchInput.value.trim().toLowerCase();
+      pager.reset();
+      renderPanel();
+    }, 160);
+  });
+
+  function clearSearch() {
+    searchInput.value = '';
+    searchQuery = '';
+    searchWrap.classList.remove('has-value');
+    pager.reset();
+    renderPanel();
+    searchInput.focus();
+  }
 
   function showMsg(text, type) {
     const el = document.getElementById('msg');
@@ -131,7 +316,8 @@
       const a = document.createElement('button');
       a.type = 'button';
       a.className = 'tab' + (g === currentGroup ? ' active' : '');
-      a.textContent = GROUP_LABELS[g] || g;
+      const n = (groups[g] || []).length;
+      a.textContent = (GROUP_LABELS[g] || g) + (n ? ' (' + n + ')' : '');
       a.onclick = () => {
         currentGroup = g;
         pager.reset();
@@ -143,8 +329,35 @@
     });
   }
 
-  function renderPanel() {
+  function filteredItems() {
     const items = groups[currentGroup] || [];
+    if (!searchQuery) return items;
+    return items.filter(item => {
+      const hay = [
+        item.key,
+        item.description,
+        item.value,
+        item.source,
+        item.valueType
+      ].map(x => String(x == null ? '' : x).toLowerCase()).join('\n');
+      return hay.includes(searchQuery);
+    });
+  }
+
+  function highlight(text) {
+    const raw = String(text == null ? '' : text);
+    if (!searchQuery) return esc(raw);
+    const lower = raw.toLowerCase();
+    const idx = lower.indexOf(searchQuery);
+    if (idx < 0) return esc(raw);
+    return esc(raw.slice(0, idx))
+      + '<mark class="hit">' + esc(raw.slice(idx, idx + searchQuery.length)) + '</mark>'
+      + esc(raw.slice(idx + searchQuery.length));
+  }
+
+  function renderPanel() {
+    const all = groups[currentGroup] || [];
+    const items = filteredItems();
     const panel = document.getElementById('panel');
     panel.innerHTML = '';
     pager.apply({
@@ -152,17 +365,32 @@
       pageNum: pager.pageNum,
       pageSize: pager.pageSize
     });
+
+    const bar = document.createElement('div');
+    bar.className = 'filter-bar';
+    if (searchQuery) {
+      bar.innerHTML = '当前分组共 <strong>' + all.length + '</strong> 项，搜索命中 <strong>'
+        + items.length + '</strong> 项';
+    } else {
+      bar.innerHTML = '当前分组共 <strong>' + all.length + '</strong> 项';
+    }
+    panel.appendChild(bar);
+
     if (!items.length) {
-      panel.innerHTML = '<div style="color:#999">暂无配置项</div>';
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      empty.textContent = searchQuery ? '无匹配配置，试试换关键词或切换分组' : '暂无配置项';
+      panel.appendChild(empty);
       return;
     }
+
     const start = (pager.pageNum - 1) * pager.pageSize;
     const pageItems = items.slice(start, start + pager.pageSize);
     pageItems.forEach(item => {
       const row = document.createElement('div');
       row.className = 'item';
       const flags = [];
-      flags.push('<span class="tag ' + (item.source === 'DB' ? 'tag-db' : item.source === 'CUSTOM' ? 'tag-db' : '') + '">' +
+      flags.push('<span class="tag ' + (item.source === 'DB' || item.source === 'CUSTOM' ? 'tag-db' : '') + '">' +
         (item.source === 'DB' ? '来自 DB' : item.source === 'CUSTOM' ? '自定义' : '来自默认') + '</span>');
       if (!item.hotReload) flags.push('<span class="tag tag-warn">需重启</span>');
       if (!item.writable) flags.push('<span class="tag tag-ro">只读</span>');
@@ -170,8 +398,7 @@
       if (item.custom) flags.push('<span class="tag tag-warn">自定义</span>');
 
       let controlHtml = '';
-      const draftKey = item.key;
-      const currentDraft = drafts[draftKey];
+      const currentDraft = drafts[item.key];
       if (!item.writable) {
         controlHtml = '<input disabled value="' + esc(item.value || '') + '"/>' +
           '<div class="hint">只读展示，不可在后台修改</div>';
@@ -201,8 +428,8 @@
       }
 
       row.innerHTML =
-        '<div class="meta"><div class="desc">' + esc(item.description || item.key) + '</div>' +
-        '<div class="key">' + esc(item.key) + '</div>' +
+        '<div class="meta"><div class="desc">' + highlight(item.description || item.key) + '</div>' +
+        '<div class="key">' + highlight(item.key) + '</div>' +
         '<div class="flags">' + flags.join('') + '</div></div>' +
         '<div class="control">' + controlHtml + '</div>';
       panel.appendChild(row);
@@ -231,17 +458,15 @@
     for (const item of items) {
       if (!item.writable) continue;
       const el = document.querySelector('[data-key="' + cssEscape(item.key) + '"]');
-      // 分页后非当前页控件不在 DOM，改用 drafts
       const v = el ? el.value : drafts[item.key];
       if (v == null) continue;
       if (item.secret) {
-        // 密钥留空=不修改；仅提交用户新输入
         if (v && String(v).trim()) simple.push({ key: item.key, value: v });
         continue;
       }
       const next = normalizeCompare(item, v);
       const prev = normalizeCompare(item, item.value);
-      if (next === prev) continue; // 未变更不写库，避免整组误标「来自 DB」
+      if (next === prev) continue;
       simple.push({ key: item.key, value: next });
     }
     if (!simple.length) {
@@ -260,6 +485,7 @@
       groups = data.groups || groups;
       Object.keys(drafts).forEach(k => delete drafts[k]);
       pager.reset();
+      renderTabs();
       renderPanel();
       let tip = '已保存并热生效';
       if (data.needRestart && data.needRestart.length) {
@@ -289,13 +515,11 @@
       groups = data.groups || groups;
       delete drafts[key];
       if (item && item.custom && !(groups[currentGroup] || []).some(i => i.key === key)) {
-        // 自定义组可能变空，切回有数据的组
         const names = Object.keys(groups).filter(g => (groups[g] || []).length);
         if (names.length && !(groups[currentGroup] || []).length) currentGroup = names[0];
         pager.reset();
         renderTabs();
       }
-      // 删除后若当前页越界，pager.apply 会收敛 pageNum
       renderPanel();
       showMsg((item && item.custom ? '已删除：' : '已恢复默认：') + key, 'ok');
     } catch (e) {
@@ -318,8 +542,7 @@
     document.getElementById('cValue').value = '';
     document.getElementById('cDesc').value = '';
     document.getElementById('cType').value = 'STRING';
-    const mask = document.getElementById('createMask');
-    mask.style.display = 'flex';
+    document.getElementById('createMask').style.display = 'flex';
   }
 
   function closeCreate() {
@@ -372,7 +595,6 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
   function cssEscape(s) {
-    // attribute selector escape for quotes
     return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   }
 

@@ -4,98 +4,264 @@
   <meta charset="UTF-8"/>
   <title>缓存管理</title>
   <style>
-    body { margin: 0; padding: 16px; font-family: sans-serif; background: #f5f7fa; color: #333; }
-    .card { background: #fff; border-radius: 6px; padding: 16px; margin-bottom: 12px; border: 1px solid #e8e8e8; }
-    h3 { margin: 0 0 12px; font-size: 15px; }
-    .stats { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; }
-    .stat { background: #fafafa; border-radius: 4px; padding: 8px 12px; min-width: 140px; }
-    .stat b { display: block; font-size: 16px; margin-top: 4px; }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
-    input, select, textarea { padding: 6px 8px; border: 1px solid #d9d9d9; border-radius: 4px; }
-    textarea, pre.result { width: 100%; min-height: 220px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; box-sizing: border-box; }
-    pre.result { margin: 0; padding: 10px; background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
-    .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; background: #1677ff; color: #fff; }
-    .btn-danger { background: #ff4d4f; }
-    .btn-secondary { background: #fff; color: #333; border: 1px solid #d9d9d9; }
-    .hint { font-size: 12px; color: #888; margin-top: 6px; line-height: 1.5; }
-    .msg { display: none; margin-bottom: 12px; padding: 8px 12px; border-radius: 4px; font-size: 13px; }
+    :root {
+      --bg: #f0f2f5;
+      --card: #fff;
+      --line: #e8ecf0;
+      --text: #1f2329;
+      --muted: #8a9199;
+      --subtle: #646a73;
+      --primary: #1677ff;
+      --primary-soft: #e8f3ff;
+      --danger: #f5222d;
+      --danger-soft: #fff1f0;
+      --ok: #389e0d;
+      --warn: #d48806;
+      --radius: 10px;
+      --shadow: 0 1px 2px rgba(31, 35, 41, .04), 0 4px 12px rgba(31, 35, 41, .04);
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+        'Microsoft YaHei', sans-serif;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 20px 22px 28px;
+      font-family: var(--font); background: var(--bg); color: var(--text);
+      font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+    }
+
+    .msg {
+      display: none; margin-bottom: 14px; padding: 10px 14px; border-radius: 8px;
+      font-size: 13px; border: 1px solid transparent;
+    }
     .msg.show { display: block; }
-    .msg.ok { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; }
-    .msg.err { background: #fff2f0; color: #cf1322; border: 1px solid #ffccc7; }
-    .msg.warn { background: #fffbe6; color: #d48806; border: 1px solid #ffe58f; }
-    code { background: #f5f5f5; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
-    .template { font-size: 12px; color: #666; font-family: ui-monospace, Menlo, monospace; }
-    .query-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-    @media (max-width: 900px) { .query-grid { grid-template-columns: 1fr; } }
-    .meta { font-size: 12px; color: #666; margin-bottom: 8px; line-height: 1.6; }
-    .meta b { color: #333; }
+    .msg.ok { background: #f6ffed; color: var(--ok); border-color: #b7eb8f; }
+    .msg.err { background: #fff2f0; color: #cf1322; border-color: #ffccc7; }
+    .msg.warn { background: #fffbe6; color: var(--warn); border-color: #ffe58f; }
+
+    .card {
+      background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+      box-shadow: var(--shadow); margin-bottom: 14px; overflow: hidden;
+    }
+    .card-hd {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 14px 18px; border-bottom: 1px solid var(--line); background: #fafbfc;
+    }
+    .card-hd h3 {
+      margin: 0; font-size: 15px; font-weight: 600; letter-spacing: .2px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .card-hd h3::before {
+      content: ''; width: 3px; height: 14px; border-radius: 2px; background: var(--primary);
+    }
+    .card-bd { padding: 16px 18px 18px; }
+    .hint {
+      margin: 12px 0 0; font-size: 12px; color: var(--muted); line-height: 1.65;
+    }
+    code {
+      font-family: var(--mono); font-size: 11.5px; background: #f3f5f7;
+      color: #4e5969; padding: 1px 5px; border-radius: 4px;
+    }
+
+    .stats {
+      display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px;
+    }
+    @media (max-width: 900px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+    .stat {
+      background: linear-gradient(180deg, #fbfcfd 0%, #f6f8fa 100%);
+      border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px;
+      min-width: 0;
+    }
+    .stat .label {
+      font-size: 12px; color: var(--muted); text-transform: uppercase;
+      letter-spacing: .4px; font-weight: 500;
+    }
+    .stat .value {
+      margin-top: 6px; font-size: 18px; font-weight: 650; color: var(--text);
+      font-variant-numeric: tabular-nums; word-break: break-all;
+    }
+    .stat.on .value { color: var(--ok); }
+    .stat.off .value { color: #bfbfbf; }
+
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 12px; }
+    .row:last-child { margin-bottom: 0; }
+    .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .field > span, .field-label {
+      font-size: 12px; color: var(--subtle); font-weight: 500;
+    }
+    .field.grow { flex: 1 1 220px; }
+    .params { display: flex; gap: 10px; flex-wrap: wrap; }
+    .params .field { flex: 1 1 140px; }
+
+    input, select {
+      height: 36px; padding: 0 11px; border: 1px solid #d0d5dd; border-radius: 8px;
+      background: #fff; color: var(--text); font: inherit; outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input::placeholder { color: #b0b7c0; }
+    input:hover, select:hover { border-color: #b8c0cc; }
+    input:focus, select:focus {
+      border-color: var(--primary); box-shadow: 0 0 0 3px rgba(22, 119, 255, .15);
+    }
+    select { min-width: 160px; cursor: pointer; }
+    #queryKey {
+      width: 100%; font-family: var(--mono); font-size: 12.5px;
+    }
+
+    .btn {
+      height: 36px; padding: 0 16px; border: none; border-radius: 8px; cursor: pointer;
+      font: inherit; font-size: 13px; font-weight: 550; letter-spacing: .2px;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      transition: background .15s, border-color .15s, color .15s, box-shadow .15s, transform .05s;
+      user-select: none; white-space: nowrap;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary {
+      background: var(--primary); color: #fff;
+      box-shadow: 0 1px 2px rgba(22, 119, 255, .25);
+    }
+    .btn-primary:hover { background: #0958d9; }
+    .btn-secondary {
+      background: #fff; color: var(--text); border: 1px solid #d0d5dd;
+    }
+    .btn-secondary:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+    .btn-danger {
+      background: var(--danger); color: #fff;
+      box-shadow: 0 1px 2px rgba(245, 34, 45, .2);
+    }
+    .btn-danger:hover { background: #cf1322; }
+    .btn-ghost-danger {
+      background: var(--danger-soft); color: #cf1322; border: 1px solid #ffccc7;
+    }
+    .btn-ghost-danger:hover { background: #ffe7e6; border-color: #ffa39e; }
+
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .template {
+      font-family: var(--mono); font-size: 12px; color: var(--muted);
+      background: #f6f8fa; border: 1px dashed #d9dee5; border-radius: 6px;
+      padding: 8px 10px; line-height: 1.5; word-break: break-all;
+    }
+
+    .query-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: stretch;
+    }
+    @media (max-width: 960px) { .query-grid { grid-template-columns: 1fr; } }
+
+    .result-panel {
+      display: flex; flex-direction: column; min-height: 320px;
+      border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #0f1419;
+    }
+    .result-bar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 10px 12px; background: #1a222c; border-bottom: 1px solid #2a3441;
+      font-size: 12px; color: #9aa4b2;
+    }
+    .result-bar .key {
+      font-family: var(--mono); color: #d7dee8; word-break: break-all; flex: 1 1 180px;
+    }
+    .pill {
+      display: inline-flex; align-items: center; height: 22px; padding: 0 8px;
+      border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: .2px;
+      background: #273140; color: #c5ced9;
+    }
+    .pill.hit { background: rgba(56, 158, 13, .18); color: #73d13d; }
+    .pill.miss { background: rgba(255, 255, 255, .06); color: #8b949e; }
+    .pill.neg { background: rgba(212, 136, 6, .2); color: #faad14; }
+    .pill.src { background: rgba(22, 119, 255, .2); color: #69b1ff; }
+    pre.result {
+      margin: 0; flex: 1; padding: 14px 14px 18px; overflow: auto;
+      font-family: var(--mono); font-size: 12px; line-height: 1.55;
+      color: #d6deea; background: transparent; white-space: pre-wrap; word-break: break-word;
+      min-height: 260px;
+    }
+    pre.result.empty { color: #6b7685; }
   </style>
   <script src="../common/http.js"></script>
 </head>
 <body>
 <div id="msg" class="msg"></div>
 
-<div class="card">
-  <h3>实例状态</h3>
-  <div class="stats" id="stats"></div>
-  <div class="row" style="margin-top:12px">
-    <button class="btn btn-secondary" onclick="loadStats()">刷新</button>
+<section class="card">
+  <div class="card-hd">
+    <h3>实例状态</h3>
+    <button class="btn btn-secondary" type="button" onclick="loadStats()">刷新</button>
   </div>
-  <div class="hint">清理会删除 Redis L2 数据键，并广播使集群各节点清空本地 L1。不含限流 <code>platform:geo:rl:*</code> 与鉴权键。</div>
-</div>
+  <div class="card-bd">
+    <div class="stats" id="stats"></div>
+    <p class="hint">清理会删除 Redis L2 数据键，并广播使集群各节点清空本地 L1。不含限流 <code>platform:geo:rl:*</code> 与鉴权键。</p>
+  </div>
+</section>
 
-<div class="card">
-  <h3>按范围清理</h3>
-  <div class="row">
-    <label>范围
-      <select id="scope">
-        <option value="ALL">全部地理数据</option>
-        <option value="COUNTRY">按国家</option>
-        <option value="REGION">按区划</option>
-      </select>
-    </label>
-    <input id="countryCode" placeholder="国家码 VN" maxlength="2" style="width:90px"/>
-    <input id="regionId" placeholder="regionId" style="width:120px"/>
-    <input id="parentId" placeholder="parentId(可选)" style="width:120px"/>
+<section class="card">
+  <div class="card-hd"><h3>按范围清理</h3></div>
+  <div class="card-bd">
+    <div class="row">
+      <label class="field">
+        <span>范围</span>
+        <select id="scope">
+          <option value="ALL">全部地理数据</option>
+          <option value="COUNTRY">按国家</option>
+          <option value="REGION">按区划</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>国家码</span>
+        <input id="countryCode" placeholder="VN" maxlength="2" style="width:88px"/>
+      </label>
+      <label class="field">
+        <span>regionId</span>
+        <input id="regionId" placeholder="区划 ID" style="width:140px"/>
+      </label>
+      <label class="field">
+        <span>parentId</span>
+        <input id="parentId" placeholder="可选" style="width:140px"/>
+      </label>
+      <div class="actions" style="padding-bottom:1px">
+        <button class="btn btn-secondary" type="button" onclick="doClear(true)">预估 dryRun</button>
+        <button class="btn btn-danger" type="button" onclick="doClear(false)">执行清理</button>
+      </div>
+    </div>
+    <p class="hint">按国家：清 <code>tree:{CC}:*</code> + countries 列表；按区划：清 region / path / children / 相关 tree（需填国家码以覆盖树键）。</p>
   </div>
-  <div class="row">
-    <button class="btn btn-secondary" onclick="doClear(true)">预估(dryRun)</button>
-    <button class="btn btn-danger" onclick="doClear(false)">执行清理</button>
-  </div>
-  <div class="hint">按国家：清 <code>tree:{CC}:*</code> + countries 列表；按区划：清 region/path/children/相关 tree（需填国家码以覆盖树键）。</div>
-</div>
+</section>
 
-<div class="card">
-  <h3>缓存查询</h3>
-  <div class="query-grid">
-    <div>
-      <div class="row">
-        <label>选择业务 key
-          <select id="keyType" style="min-width:200px"></select>
+<section class="card">
+  <div class="card-hd"><h3>缓存查询</h3></div>
+  <div class="card-bd">
+    <div class="query-grid">
+      <div>
+        <div class="row">
+          <label class="field grow">
+            <span>选择业务 key</span>
+            <select id="keyType" style="width:100%; min-width:0"></select>
+          </label>
+        </div>
+        <div class="template" id="keyTemplate">—</div>
+        <div class="row" style="margin-top:12px">
+          <div class="params" id="keyParams" style="width:100%"></div>
+        </div>
+        <div class="actions" style="margin:4px 0 12px">
+          <button class="btn btn-secondary" type="button" onclick="buildKeyOnly()">生成 Key</button>
+        </div>
+        <label class="field" style="margin-bottom:12px">
+          <span>精确 Key</span>
+          <input id="queryKey" placeholder="platform:geo:region:123"/>
         </label>
-        <span class="template" id="keyTemplate"></span>
+        <div class="actions">
+          <button class="btn btn-primary" type="button" onclick="doQuery()">查询</button>
+          <button class="btn btn-ghost-danger" type="button" onclick="doDeleteCurrent()">删除</button>
+        </div>
+        <p class="hint">从业务枚举生成完整 key，或直接粘贴精确 key。查询不回源 DB，只看本机 L1 与 Redis L2。删除走完整 key，不接受通配符。</p>
       </div>
-      <div class="row" id="keyParams"></div>
-      <div class="row">
-        <button class="btn btn-secondary" type="button" onclick="buildKeyOnly()">生成 Key</button>
+      <div class="result-panel">
+        <div class="result-bar" id="queryMeta">
+          <span class="key">尚未查询</span>
+        </div>
+        <pre class="result empty" id="queryResult">查询结果将显示在这里</pre>
       </div>
-      <div class="row">
-        <label style="flex:1">精确 Key
-          <input id="queryKey" style="width:100%; margin-top:4px; box-sizing:border-box" placeholder="platform:geo:region:123"/>
-        </label>
-      </div>
-      <div class="row" style="margin-top:10px">
-        <button class="btn" type="button" onclick="doQuery()">查询</button>
-        <button class="btn btn-danger" type="button" onclick="doDeleteCurrent()">删除</button>
-      </div>
-      <div class="hint">从业务枚举生成完整 key，或直接粘贴精确 key 后查询。查询不回源 DB，只看本机 L1 与 Redis L2。删除仍走 evict（完整 key，不接受通配符）。</div>
-    </div>
-    <div>
-      <div class="meta" id="queryMeta">尚未查询</div>
-      <pre class="result" id="queryResult">查询结果将显示在这里</pre>
     </div>
   </div>
-</div>
+</section>
 
 <script>
   let keyTypes = [];
@@ -117,14 +283,26 @@
       + ' @' + (r.instanceId || '').slice(0, 8);
   }
 
+  function pillClass(state) {
+    if (state === 'hit') return 'pill hit';
+    if (state === 'negative') return 'pill neg';
+    return 'pill miss';
+  }
+
   async function loadStats() {
     const s = await AdminHttp.api('/admin/geo/v1/cache/stats');
-    document.getElementById('stats').innerHTML = [
-      ['instance', (s.instanceId || '').slice(0, 8)],
-      ['L1 size', s.localEstimatedSize],
-      ['Redis L2', s.redisEnabled ? 'on' : 'off'],
-      ['广播', s.broadcastAvailable ? 'on' : 'off']
-    ].map(([k, v]) => '<div class="stat">' + k + '<b>' + v + '</b></div>').join('');
+    const items = [
+      { label: 'instance', value: (s.instanceId || '').slice(0, 8) },
+      { label: 'L1 size', value: s.localEstimatedSize },
+      { label: 'L1', value: s.l1Enabled === false ? 'off' : 'on', tone: s.l1Enabled === false ? 'off' : 'on' },
+      { label: 'Redis L2', value: s.redisEnabled ? 'on' : 'off', tone: s.redisEnabled ? 'on' : 'off' },
+      { label: '广播', value: s.broadcastAvailable ? 'on' : 'off', tone: s.broadcastAvailable ? 'on' : 'off' }
+    ];
+    document.getElementById('stats').innerHTML = items.map(it =>
+      '<div class="stat' + (it.tone ? ' ' + it.tone : '') + '">' +
+      '<div class="label">' + esc(it.label) + '</div>' +
+      '<div class="value">' + esc(it.value) + '</div></div>'
+    ).join('');
     if (Array.isArray(s.keyTypes) && s.keyTypes.length) {
       keyTypes = s.keyTypes;
       renderKeyTypeSelect();
@@ -156,19 +334,21 @@
   function onKeyTypeChange() {
     const t = currentType();
     document.getElementById('keyTemplate').textContent = t
-      ? (t.variableName + ' · ' + t.template)
-      : '';
+      ? (t.variableName + '  ·  ' + t.template)
+      : '—';
     const box = document.getElementById('keyParams');
     box.innerHTML = '';
     if (!t || !t.params) return;
     t.params.forEach(p => {
       const label = document.createElement('label');
-      label.textContent = p.label + ' ';
+      label.className = 'field';
+      const span = document.createElement('span');
+      span.textContent = p.label + (p.required ? ' *' : '');
       const input = document.createElement('input');
       input.id = 'kp_' + p.name;
       input.dataset.param = p.name;
-      input.placeholder = p.name + (p.required ? ' *' : '');
-      input.style.width = '140px';
+      input.placeholder = p.name;
+      label.appendChild(span);
       label.appendChild(input);
       box.appendChild(label);
     });
@@ -213,19 +393,29 @@
     }
   }
 
+  function layerState(present, negative) {
+    if (!present) return 'miss';
+    return negative ? 'negative' : 'hit';
+  }
+
   function renderQueryResult(data) {
     lastQueriedKey = data && data.key ? data.key : '';
     const meta = document.getElementById('queryMeta');
+    const pre = document.getElementById('queryResult');
     if (!data) {
-      meta.textContent = '尚未查询';
-      document.getElementById('queryResult').textContent = '查询结果将显示在这里';
+      meta.innerHTML = '<span class="key">尚未查询</span>';
+      pre.className = 'result empty';
+      pre.textContent = '查询结果将显示在这里';
       return;
     }
+    const l1 = layerState(data.l1Present, data.l1Negative);
+    const l2 = layerState(data.l2Present, data.l2Negative);
     meta.innerHTML =
-      'key=<b>' + esc(data.key) + '</b> · found=<b>' + esc(data.found) + '</b>'
-      + ' · source=<b>' + esc(data.source == null ? '-' : data.source) + '</b>'
-      + ' · L1=' + (data.l1Present ? (data.l1Negative ? 'negative' : 'hit') : 'miss')
-      + ' · L2=' + (data.l2Present ? (data.l2Negative ? 'negative' : 'hit') : 'miss');
+      '<span class="key">' + esc(data.key) + '</span>' +
+      '<span class="pill ' + (data.found ? 'hit' : 'miss') + '">' + (data.found ? 'found' : 'not found') + '</span>' +
+      '<span class="pill src">src ' + esc(data.source == null ? '-' : data.source) + '</span>' +
+      '<span class="' + pillClass(l1) + '">L1 ' + l1 + '</span>' +
+      '<span class="' + pillClass(l2) + '">L2 ' + l2 + '</span>';
     const view = {
       found: data.found,
       source: data.source,
@@ -239,7 +429,8 @@
         error: data.l2Error || null
       }
     };
-    document.getElementById('queryResult').textContent = JSON.stringify(view, null, 2);
+    pre.className = 'result';
+    pre.textContent = JSON.stringify(view, null, 2);
   }
 
   async function doQuery() {
@@ -270,7 +461,6 @@
       });
       showMsg(fmtResult(r), 'ok');
       document.getElementById('queryKey').value = key;
-      // 删除后再查一次，右侧同步为空
       try {
         const data = await AdminHttp.api('/admin/geo/v1/cache/query', {
           method: 'POST',

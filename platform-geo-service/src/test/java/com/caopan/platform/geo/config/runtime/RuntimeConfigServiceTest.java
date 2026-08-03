@@ -1,6 +1,7 @@
 package com.caopan.platform.geo.config.runtime;
 
 import com.caopan.platform.geo.cache.GeoCacheProperties;
+import com.caopan.platform.geo.cache.TieredCache;
 import com.caopan.platform.geo.config.GeoAccessLogProperties;
 import com.caopan.platform.geo.config.GeoAdminProperties;
 import com.caopan.platform.geo.config.GeoAuthProperties;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.mock.env.MockEnvironment;
 
 import java.util.List;
@@ -36,6 +38,8 @@ class RuntimeConfigServiceTest {
     private PlatformRuntimeConfigAuditMapper auditMapper;
     @Mock
     private ConfigChangeBroadcaster broadcaster;
+    @Mock
+    private ObjectProvider<TieredCache> tieredCacheProvider;
 
     private EffectiveConfigRegistry registry;
     private RuntimeConfigService service;
@@ -56,10 +60,11 @@ class RuntimeConfigServiceTest {
         GeoAccessLogProperties accessLog = new GeoAccessLogProperties(true, true, true, 2048);
         GeoAdminProperties admin = new GeoAdminProperties(true, "", "/admin", "admin", "admin", 7);
         GeoCacheProperties cache = new GeoCacheProperties(
-                true, 10_000L, 10L, 24L, 24L, 24L, 24L, 12L, 300L, 30L, 20_000, 4);
+                true, true, 10_000L, 10L, 24L, 24L, 24L, 24L, 12L, 300L, 30L, 20_000, 4);
+        when(tieredCacheProvider.getIfAvailable()).thenReturn(null);
         service = new RuntimeConfigService(
                 registry, crypto, configMapper, auditMapper, broadcaster, env,
-                report, auth, accessLog, admin, cache);
+                report, auth, accessLog, admin, cache, tieredCacheProvider);
         when(configMapper.findAll()).thenReturn(List.of());
         service.reloadFromDb();
     }

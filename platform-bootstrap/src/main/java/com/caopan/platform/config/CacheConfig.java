@@ -2,6 +2,7 @@ package com.caopan.platform.config;
 
 import com.caopan.platform.geo.cache.GeoCacheProperties;
 import com.caopan.platform.geo.cache.TieredCache;
+import com.caopan.platform.geo.config.runtime.EffectiveCacheSettings;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -15,8 +16,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 /**
  * 三级缓存装配（GEO-001 / platform-bootstrap）。
  * <p>创建 L1 Caffeine 与 {@link TieredCache}（L1→L2 Redis→L3 DB）；
- * TTL/容量来自 {@link GeoCacheProperties}。负缓存条目使用与 L2 一致的短 TTL，正缓存用 L1 TTL。
- * Redis 不可用或关闭时降级 L1+DB。</p>
+ * L1/L2 运行时开关见 {@link EffectiveCacheSettings}。</p>
  */
 @Configuration
 public class CacheConfig {
@@ -54,16 +54,17 @@ public class CacheConfig {
             Cache<String, Object> geoLocalCache,
             ObjectMapper objectMapper,
             GeoCacheProperties props,
+            EffectiveCacheSettings effectiveCacheSettings,
             org.springframework.beans.factory.ObjectProvider<StringRedisTemplate> redisProvider) {
         StringRedisTemplate redis = redisProvider.getIfAvailable();
-        boolean useRedis = props.redisEnabled() && redis != null;
-        if (!useRedis) {
-            log.warn("TieredCache Redis L2 disabled, fallback L1+DB only");
+        boolean redisAvailable = redis != null;
+        if (!redisAvailable) {
+            log.warn("TieredCache Redis client unavailable; L2 cannot be enabled");
         } else {
-            log.info("TieredCache enabled: L1=Caffeine(max={}, ttl={}m, neg={}s), L2=Redis(jitter={}s), L3=DB",
-                    props.l1MaximumSize(), props.l1TtlMinutes(),
-                    props.negativeTtlSeconds(), props.jitterSeconds());
+            log.info("TieredCache assembled: L1=Caffeine(max={}, ttl={}m), L2=Redis(available), switches via runtime config",
+                    props.l1MaximumSize(), props.l1TtlMinutes());
         }
-        return new TieredCache(geoLocalCache, redis, objectMapper, useRedis, props.negativeTtl());
+        return new TieredCache(
+                geoLocalCache, redis, objectMapper, redisAvailable, props.negativeTtl(), effectiveCacheSettings);
     }
 }

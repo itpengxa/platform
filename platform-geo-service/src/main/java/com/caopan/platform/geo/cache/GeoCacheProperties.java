@@ -13,6 +13,7 @@ import java.util.concurrent.ThreadLocalRandom;
 @ConfigurationProperties(prefix = "platform.geo.cache")
 public record GeoCacheProperties(
         @DefaultValue("true") boolean redisEnabled,
+        @DefaultValue("true") boolean l1Enabled,
         @DefaultValue("10000") long l1MaximumSize,
         @DefaultValue("10") long l1TtlMinutes,
         @DefaultValue("24") long countriesTtlHours,
