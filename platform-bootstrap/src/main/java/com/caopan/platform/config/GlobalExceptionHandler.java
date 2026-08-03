@@ -47,7 +47,8 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Result<Void>> handleBiz(BizException e, HttpServletRequest request) {
         String message = resolveBizMessage(e);
         log.warn("biz exception, code={}, message={}", e.getCode(), message);
-        HttpStatus status = e.getCode() == ErrorCode.UNAUTHORIZED.getCode()
+        HttpStatus status = (e.getCode() == ErrorCode.UNAUTHORIZED.getCode()
+                || e.getCode() == ErrorCode.ADMIN_UNAUTHORIZED.getCode())
                 ? HttpStatus.UNAUTHORIZED
                 : HttpStatus.OK;
         return ResponseEntity.status(status).body(Result.fail(e.getCode(), message));

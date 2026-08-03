@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <title>缓存管理</title>
+  <style>
+    body { margin: 0; padding: 16px; font-family: sans-serif; background: #f5f7fa; color: #333; }
+    .card { background: #fff; border-radius: 6px; padding: 16px; margin-bottom: 12px; border: 1px solid #e8e8e8; }
+    h3 { margin: 0 0 12px; font-size: 15px; }
+    .stats { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; }
+    .stat { background: #fafafa; border-radius: 4px; padding: 8px 12px; min-width: 140px; }
+    .stat b { display: block; font-size: 16px; margin-top: 4px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+    input, select, textarea { padding: 6px 8px; border: 1px solid #d9d9d9; border-radius: 4px; }
+    textarea { width: 100%; min-height: 90px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+    .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; background: #1677ff; color: #fff; }
+    .btn-danger { background: #ff4d4f; }
+    .btn-secondary { background: #fff; color: #333; border: 1px solid #d9d9d9; }
+    .hint { font-size: 12px; color: #888; margin-top: 6px; line-height: 1.5; }
+    .msg { display: none; margin-bottom: 12px; padding: 8px 12px; border-radius: 4px; font-size: 13px; }
+    .msg.show { display: block; }
+    .msg.ok { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; }
+    .msg.err { background: #fff2f0; color: #cf1322; border: 1px solid #ffccc7; }
+    .msg.warn { background: #fffbe6; color: #d48806; border: 1px solid #ffe58f; }
+    code { background: #f5f5f5; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+  </style>
+  <script src="../common/http.js"></script>
+</head>
+<body>
+<div id="msg" class="msg"></div>
+
+<div class="card">
+  <h3>实例状态</h3>
+  <div class="stats" id="stats"></div>
+  <div class="row" style="margin-top:12px">
+    <button class="btn btn-secondary" onclick="loadStats()">刷新</button>
+  </div>
+  <div class="hint">清理会删除 Redis L2 数据键，并广播使集群各节点清空本地 L1。不含限流 <code>platform:geo:rl:*</code> 与鉴权键。</div>
+</div>
+
+<div class="card">
+  <h3>按范围清理</h3>
+  <div class="row">
+    <label>范围
+      <select id="scope">
+        <option value="ALL">全部地理数据</option>
+        <option value="COUNTRY">按国家</option>
+        <option value="REGION">按区划</option>
+      </select>
+    </label>
+    <input id="countryCode" placeholder="国家码 VN" maxlength="2" style="width:90px"/>
+    <input id="regionId" placeholder="regionId" style="width:120px"/>
+    <input id="parentId" placeholder="parentId(可选)" style="width:120px"/>
+  </div>
+  <div class="row">
+    <button class="btn btn-secondary" onclick="doClear(true)">预估(dryRun)</button>
+    <button class="btn btn-danger" onclick="doClear(false)">执行清理</button>
+  </div>
+  <div class="hint">按国家：清 <code>tree:{CC}:*</code> + countries 列表；按区划：清 region/path/children/相关 tree（需填国家码以覆盖树键）。</div>
+</div>
+
+<div class="card">
+  <h3>精确删除 Keys</h3>
+  <textarea id="keys" placeholder="每行一个 key，例如&#10;platform:geo:region:123&#10;platform:geo:path:123"></textarea>
+  <div class="row" style="margin-top:10px">
+    <button class="btn btn-secondary" onclick="doEvict(true)">预估</button>
+    <button class="btn btn-danger" onclick="doEvict(false)">删除</button>
+  </div>
+</div>
+
+<script>
+  function showMsg(text, type) {
+    const el = document.getElementById('msg');
+    el.textContent = text;
+    el.className = 'msg show ' + (type || 'ok');
+  }
+
+  function fmtResult(r) {
+    return 'scope=' + r.scope
+      + ' redisKeys=' + r.deletedRedisKeys
+      + ' L1=' + r.localL1Cleared
+      + ' broadcast=' + r.broadcast
+      + ' dryRun=' + r.dryRun
+      + ' ' + r.elapsedMs + 'ms'
+      + ' @' + (r.instanceId || '').slice(0, 8);
+  }
+
+  async function loadStats() {
+    const s = await AdminHttp.api('/admin/geo/v1/cache/stats');
+    document.getElementById('stats').innerHTML = [
+      ['instance', (s.instanceId || '').slice(0, 8)],
+      ['L1 size', s.localEstimatedSize],
+      ['Redis L2', s.redisEnabled ? 'on' : 'off'],
+      ['广播', s.broadcastAvailable ? 'on' : 'off']
+    ].map(([k, v]) => '<div class="stat">' + k + '<b>' + v + '</b></div>').join('');
+  }
+
+  async function doClear(dryRun) {
+    const scope = document.getElementById('scope').value;
+    const body = {
+      scope,
+      countryCode: document.getElementById('countryCode').value.trim() || null,
+      regionId: numOrNull(document.getElementById('regionId').value),
+      parentId: numOrNull(document.getElementById('parentId').value),
+      dryRun
+    };
+    if (!dryRun) {
+      const tip = scope === 'ALL' ? '确认清空全部地理数据缓存（L1+L2，集群广播）？' : '确认执行清理？';
+      if (!confirm(tip)) return;
+    }
+    try {
+      const r = await AdminHttp.api('/admin/geo/v1/cache/clear', {
+        method: 'POST', body: JSON.stringify(body)
+      });
+      showMsg(fmtResult(r), dryRun ? 'warn' : 'ok');
+      if (!dryRun) loadStats();
+    } catch (e) {
+      showMsg(e.message || '失败', 'err');
+    }
+  }
+
+  async function doEvict(dryRun) {
+    const keys = document.getElementById('keys').value.split(/\r?\n/)
+      .map(s => s.trim()).filter(Boolean);
+    if (!keys.length) {
+      showMsg('请填写至少一个 key', 'warn');
+      return;
+    }
+    if (!dryRun && !confirm('确认删除 ' + keys.length + ' 个 key？')) return;
+    try {
+      const r = await AdminHttp.api('/admin/geo/v1/cache/evict', {
+        method: 'POST', body: JSON.stringify({ keys, dryRun })
+      });
+      showMsg(fmtResult(r), dryRun ? 'warn' : 'ok');
+      if (!dryRun) loadStats();
+    } catch (e) {
+      showMsg(e.message || '失败', 'err');
+    }
+  }
+
+  function numOrNull(v) {
+    v = (v || '').trim();
+    if (!v) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  loadStats().catch(e => showMsg(e.message || '加载失败', 'err'));
+</script>
+</body>
+</html>

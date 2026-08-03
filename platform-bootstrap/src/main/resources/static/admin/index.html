@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Platform GEO 管理控制台</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; color: #333; }
+    .layout { display: flex; min-height: 100vh; }
+    .sidebar { width: 220px; background: #fff; border-right: 1px solid #e8e8e8; padding: 16px 0; }
+    .sidebar h1 { font-size: 16px; padding: 0 20px 16px; margin: 0; color: #1677ff; }
+    .nav a { display: block; padding: 10px 20px; color: #555; text-decoration: none; }
+    .nav a.active, .nav a:hover { background: #e6f4ff; color: #1677ff; }
+    .nav-group {
+      margin: 16px 20px 6px; font-size: 11px; color: #999; letter-spacing: .5px; text-transform: uppercase;
+    }
+    .main { flex: 1; display: flex; flex-direction: column; }
+    .topbar {
+      background: #fff; border-bottom: 1px solid #e8e8e8; padding: 12px 20px; font-size: 14px; color: #666;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .userbar { display: flex; gap: 12px; align-items: center; }
+    .userbar button {
+      border: 1px solid #d9d9d9; background: #fff; border-radius: 4px; padding: 4px 10px; cursor: pointer;
+    }
+    .content { flex: 1; }
+    iframe { width: 100%; height: calc(100vh - 49px); border: none; background: #f5f7fa; }
+  </style>
+  <script src="common/http.js"></script>
+  <script>
+    if (!AdminHttp.getToken()) {
+      const back = encodeURIComponent(location.pathname + location.search + location.hash);
+      location.replace('/admin/login.html?redirect=' + back);
+    }
+  </script>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <h1>GEO 管理</h1>
+    <nav class="nav">
+      <div class="nav-group">业务</div>
+      <a href="#regions" data-page="pages/regions.html" class="active">区划管理</a>
+      <a href="#reports" data-page="pages/reports.html">上报记录</a>
+      <div class="nav-group">用户与接入</div>
+      <a href="#admins" data-page="pages/admins.html">管理员</a>
+      <a href="#clients" data-page="pages/clients.html">接入方</a>
+      <a href="#tokens" data-page="pages/tokens.html">Token</a>
+      <div class="nav-group">数据</div>
+      <a href="#dashboard" data-page="pages/dashboard.html">数据看板</a>
+      <div class="nav-group">系统</div>
+      <a href="#settings" data-page="pages/settings.html">系统配置</a>
+      <a href="#cache" data-page="pages/cache.html">缓存管理</a>
+      <div class="nav-group">开发工具</div>
+      <a href="#debug" data-page="pages/debug.html">API 调试器</a>
+      <a href="#picker" data-page="pages/picker.html">选择器预览</a>
+    </nav>
+  </aside>
+  <div class="main">
+    <div class="topbar">
+      <span id="breadcrumb">区划管理</span>
+      <div class="userbar">
+        <span id="userLabel"></span>
+        <button onclick="AdminHttp.logout()">退出登录</button>
+      </div>
+    </div>
+    <div class="content">
+      <iframe id="frame" src="about:blank"></iframe>
+    </div>
+  </div>
+</div>
+<script>
+  const user = AdminHttp.getUser();
+  document.getElementById('userLabel').textContent = user
+    ? ((user.displayName || user.username) + ' (' + user.username + ')')
+    : '';
+  const links = document.querySelectorAll('.nav a');
+  const frame = document.getElementById('frame');
+  const crumb = document.getElementById('breadcrumb');
+  function pageUrl(path) {
+    // 每次切页带时间戳，避免 admin 子页（尤其 picker.html）被浏览器长期缓存
+    const sep = path.indexOf('?') >= 0 ? '&' : '?';
+    return path + sep + '_=' + Date.now();
+  }
+  links.forEach(a => {
+    a.addEventListener('click', e => {
+      e.preventDefault();
+      links.forEach(x => x.classList.remove('active'));
+      a.classList.add('active');
+      frame.src = pageUrl(a.dataset.page);
+      crumb.textContent = a.textContent;
+      location.hash = a.getAttribute('href').slice(1);
+    });
+  });
+  function applyHash() {
+    const hash = location.hash.replace('#', '');
+    if (!hash) {
+      const home = document.querySelector('.nav a[data-page]');
+      if (home) home.click();
+      return;
+    }
+    const target = document.querySelector('[href="#' + hash + '"]');
+    if (target) target.click();
+  }
+  applyHash();
+  window.addEventListener('hashchange', applyHash);
+</script>
+</body>
+</html>

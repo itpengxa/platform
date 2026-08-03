@@ -35,6 +35,10 @@ public class RegionVO implements Serializable {
     private String path;
     /** 是否末级（无子节点） */
     private Boolean isLeaf;
+    /** 纬度（可空） */
+    private java.math.BigDecimal latitude;
+    /** 经度（可空） */
+    private java.math.BigDecimal longitude;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -60,4 +64,8 @@ public class RegionVO implements Serializable {
     public void setPath(String path) { this.path = path; }
     public Boolean getIsLeaf() { return isLeaf; }
     public void setIsLeaf(Boolean isLeaf) { this.isLeaf = isLeaf; }
+    public java.math.BigDecimal getLatitude() { return latitude; }
+    public void setLatitude(java.math.BigDecimal latitude) { this.latitude = latitude; }
+    public java.math.BigDecimal getLongitude() { return longitude; }
+    public void setLongitude(java.math.BigDecimal longitude) { this.longitude = longitude; }
 }

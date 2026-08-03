@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <title>接入方管理</title>
+  <style>
+    body { margin: 0; padding: 16px; font-family: sans-serif; background: #f5f7fa; }
+    .filters { background: #fff; padding: 12px; border-radius: 6px; margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+    input, select { padding: 6px 8px; border: 1px solid #d9d9d9; border-radius: 4px; }
+    .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; background: #1677ff; color: #fff; }
+    .btn-secondary { background: #fff; color: #333; border: 1px solid #d9d9d9; }
+    table { width: 100%; background: #fff; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; font-size: 13px; text-align: left; }
+    th { background: #fafafa; }
+    .tag { padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+    .tag-green { background: #f6ffed; color: #389e0d; }
+    .tag-orange { background: #fff7e6; color: #d46b08; }
+    .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); align-items: center; justify-content: center; }
+    .modal.show { display: flex; }
+    .modal-box { background: #fff; padding: 20px; border-radius: 8px; width: 420px; }
+    .form-row { margin-bottom: 10px; }
+    .form-row label { display: block; margin-bottom: 4px; font-size: 13px; }
+    .form-row input, .form-row select { width: 100%; padding: 6px 8px; }
+  </style>
+</head>
+<body>
+<div class="filters">
+  <input id="clientCode" placeholder="clientCode"/>
+  <select id="status"><option value="">状态</option><option value="1">启用</option><option value="0">停用</option></select>
+  <select id="allowIssue"><option value="">签发</option><option value="1">允许</option><option value="0">禁止</option></select>
+  <button class="btn" onclick="search()">搜索</button>
+  <button class="btn" onclick="openCreate()">+ 新增</button>
+</div>
+<table>
+  <thead><tr><th>ID</th><th>编码</th><th>名称</th><th>状态</th><th>允许签发</th><th>备注</th><th>操作</th></tr></thead>
+  <tbody id="tbody"></tbody>
+</table>
+<div id="pager"></div>
+<div class="modal" id="modal">
+  <div class="modal-box">
+    <h3 id="modalTitle">新增接入方</h3>
+    <input type="hidden" id="editId"/>
+    <div class="form-row"><label>clientCode *</label><input id="fCode"/></div>
+    <div class="form-row"><label>名称 *</label><input id="fName"/></div>
+    <div class="form-row"><label>允许签发</label><select id="fAllow"><option value="1">是</option><option value="0">否</option></select></div>
+    <div class="form-row"><label>备注</label><input id="fRemark"/></div>
+    <div style="text-align:right;margin-top:12px">
+      <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="save()">保存</button>
+    </div>
+  </div>
+</div>
+<script src="../common/http.js"></script>
+<script src="../common/dict.js"></script>
+<script src="../common/pager.js"></script>
+<script>
+  const rowCache = {};
+  const pager = AdminPager.mount('pager', { pageSize: 20, onChange: () => load() });
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+  function search() { pager.reset(); load(); }
+  async function load() {
+    const q = new URLSearchParams({ pageNum: pager.pageNum, pageSize: pager.pageSize });
+    ['clientCode','status','allowIssue'].forEach(k => {
+      const v = document.getElementById(k === 'clientCode' ? 'clientCode' : k).value;
+      if (v !== '') q.set(k, v);
+    });
+    const data = await AdminHttp.api('/admin/platform/v1/clients/page?' + q);
+    pager.apply(data);
+    Object.keys(rowCache).forEach(k => delete rowCache[k]);
+    const list = data.list || [];
+    document.getElementById('tbody').innerHTML = list.length ? list.map(c => {
+      rowCache[c.id] = c;
+      return `<tr>
+      <td>${c.id}</td><td>${esc(c.clientCode)}</td><td>${esc(c.clientName)}</td>
+      <td>${AdminDict.statusTag(c.status)}</td><td>${AdminDict.allowIssueTag(c.allowIssue)}</td>
+      <td>${esc(c.remark||'')}</td>
+      <td><button class="btn btn-secondary" style="font-size:12px" onclick="edit(${c.id})">修改</button>
+      <button class="btn btn-secondary" style="font-size:12px" onclick="toggle(${c.id},${c.status===1?0:1})">${c.status===1?'停用':'启用'}</button></td></tr>`;
+    }).join('') : '<tr><td colspan="7" style="color:#999;text-align:center">暂无数据</td></tr>';
+  }
+  function openCreate() {
+    document.getElementById('editId').value = '';
+    document.getElementById('fCode').disabled = false;
+    ['fCode','fName','fRemark'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('fAllow').value = '1';
+    document.getElementById('modalTitle').textContent = '新增接入方';
+    document.getElementById('modal').classList.add('show');
+  }
+  function edit(id) {
+    const c = rowCache[id];
+    if (!c) return;
+    document.getElementById('editId').value = c.id;
+    document.getElementById('fCode').value = c.clientCode;
+    document.getElementById('fCode').disabled = true;
+    document.getElementById('fName').value = c.clientName;
+    document.getElementById('fAllow').value = c.allowIssue;
+    document.getElementById('fRemark').value = c.remark || '';
+    document.getElementById('modalTitle').textContent = '修改接入方';
+    document.getElementById('modal').classList.add('show');
+  }
+  function closeModal() { document.getElementById('modal').classList.remove('show'); }
+  async function save() {
+    const id = document.getElementById('editId').value;
+    if (id) {
+      await AdminHttp.api('/admin/platform/v1/clients/' + id, {
+        method: 'PUT',
+        body: JSON.stringify({
+          clientName: document.getElementById('fName').value.trim(),
+          allowIssue: parseInt(document.getElementById('fAllow').value, 10),
+          remark: document.getElementById('fRemark').value.trim() || null
+        })
+      });
+    } else {
+      await AdminHttp.api('/admin/platform/v1/clients', {
+        method: 'POST',
+        body: JSON.stringify({
+          clientCode: document.getElementById('fCode').value.trim(),
+          clientName: document.getElementById('fName').value.trim(),
+          allowIssue: parseInt(document.getElementById('fAllow').value, 10),
+          remark: document.getElementById('fRemark').value.trim() || null
+        })
+      });
+    }
+    closeModal(); load();
+  }
+  async function toggle(id, status) {
+    await AdminHttp.api('/admin/platform/v1/clients/' + id + '/status', { method: 'PATCH', body: JSON.stringify({ status }) });
+    load();
+  }
+  load();
+</script>
+</body>
+</html>

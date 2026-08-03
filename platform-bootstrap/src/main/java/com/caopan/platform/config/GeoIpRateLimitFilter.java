@@ -10,7 +10,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import com.caopan.platform.geo.cache.GeoCacheProperties;
+import com.caopan.platform.geo.config.runtime.EffectiveCacheSettings;
+import com.caopan.platform.geo.config.runtime.EffectiveRateLimitSettings;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.MessageSource;
 import org.springframework.core.Ordered;
@@ -54,13 +55,8 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
     private final ObjectMapper objectMapper;
     private final MessageSource messageSource;
     private final StringRedisTemplate redisTemplate;
-    private final boolean redisEnabled;
-    private final boolean enabled;
-    private final boolean trustForwardedHeaders;
-    private final boolean failClosed;
-    private final long defaultIntervalMs;
-    private final long searchIntervalMs;
-    private final long treeIntervalMs;
+    private final EffectiveCacheSettings cacheSettings;
+    private final EffectiveRateLimitSettings rateLimitSettings;
 
     private final ConcurrentHashMap<String, AtomicLong> localWindow = new ConcurrentHashMap<>();
     private final AtomicLong lastCleanupAt = new AtomicLong(0L);
@@ -69,23 +65,22 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
             ObjectMapper objectMapper,
             MessageSource messageSource,
             ObjectProvider<StringRedisTemplate> redisProvider,
-            GeoCacheProperties cacheProperties,
-            GeoRateLimitProperties rateLimitProperties) {
+            EffectiveCacheSettings cacheSettings,
+            EffectiveRateLimitSettings rateLimitSettings) {
         this.objectMapper = objectMapper;
         this.messageSource = messageSource;
         this.redisTemplate = redisProvider.getIfAvailable();
-        this.redisEnabled = cacheProperties.redisEnabled() && this.redisTemplate != null;
-        this.enabled = rateLimitProperties.enabled();
-        this.trustForwardedHeaders = rateLimitProperties.trustForwardedHeaders();
-        this.failClosed = rateLimitProperties.failClosed();
-        this.defaultIntervalMs = rateLimitProperties.resolvedDefaultIntervalMs();
-        this.searchIntervalMs = rateLimitProperties.resolvedSearchIntervalMs();
-        this.treeIntervalMs = rateLimitProperties.resolvedTreeIntervalMs();
+        this.cacheSettings = cacheSettings;
+        this.rateLimitSettings = rateLimitSettings;
+    }
+
+    private boolean redisEnabled() {
+        return cacheSettings.redisEnabled() && redisTemplate != null;
     }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        if (!enabled) {
+        if (!rateLimitSettings.enabled()) {
             return true;
         }
         String uri = request.getRequestURI();
@@ -100,7 +95,7 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String uri = request.getRequestURI();
         LimitBucket limit = resolveBucket(uri);
-        String ip = resolveClientIp(request, trustForwardedHeaders);
+        String ip = resolveClientIp(request, rateLimitSettings.trustForwardedHeaders());
         String limitKey = ip + ":" + limit.name();
 
         if (!tryAcquire(limitKey, limit.intervalMs())) {
@@ -114,15 +109,15 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
 
     private LimitBucket resolveBucket(String uri) {
         if (isPath(uri, TOKEN_ISSUE_PATH)) {
-            return new LimitBucket("issue", defaultIntervalMs);
+            return new LimitBucket("issue", rateLimitSettings.defaultIntervalMs());
         }
         if (isPath(uri, TREE_PATH)) {
-            return new LimitBucket("tree", treeIntervalMs);
+            return new LimitBucket("tree", rateLimitSettings.treeIntervalMs());
         }
         if (isPath(uri, SEARCH_PATH)) {
-            return new LimitBucket("search", searchIntervalMs);
+            return new LimitBucket("search", rateLimitSettings.searchIntervalMs());
         }
-        return new LimitBucket("default", defaultIntervalMs);
+        return new LimitBucket("default", rateLimitSettings.defaultIntervalMs());
     }
 
     private record LimitBucket(String name, long intervalMs) {
@@ -139,7 +134,8 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
     }
 
     private boolean tryAcquire(String limitKey, long intervalMs) {
-        if (redisEnabled) {
+        boolean failClosed = rateLimitSettings.failClosed();
+        if (redisEnabled()) {
             try {
                 return tryAcquireRedis(REDIS_KEY_PREFIX + limitKey, Math.max(intervalMs, 1L));
             } catch (Exception e) {
@@ -205,7 +201,8 @@ public class GeoIpRateLimitFilter extends OncePerRequestFilter {
         if (!lastCleanupAt.compareAndSet(prev, now)) {
             return;
         }
-        long expireBefore = now - Math.max(defaultIntervalMs, treeIntervalMs) * 10;
+        long expireBefore = now - Math.max(
+                rateLimitSettings.defaultIntervalMs(), rateLimitSettings.treeIntervalMs()) * 10;
         Iterator<Map.Entry<String, AtomicLong>> it = localWindow.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<String, AtomicLong> e = it.next();

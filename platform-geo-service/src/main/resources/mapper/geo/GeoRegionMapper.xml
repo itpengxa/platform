@@ -109,4 +109,102 @@
         </foreach>
         GROUP BY parent_id
     </select>
+
+    <select id="findByIdAnyStatus" resultType="com.caopan.platform.geo.entity.GeoRegion">
+        SELECT <include refid="RegionColumns"/>
+        FROM geo_region
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="countAdminPage" resultType="long">
+        SELECT COUNT(1)
+        FROM geo_region
+        <where>
+            <if test="countryCode != null and countryCode != ''">
+                AND country_code = #{countryCode}
+            </if>
+            <if test="parentId != null">
+                AND parent_id = #{parentId}
+            </if>
+            <if test="level != null">
+                AND level = #{level}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+            <if test="source != null and source != ''">
+                AND source = #{source}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    name LIKE CONCAT('%', #{keyword}, '%')
+                    OR name_en LIKE CONCAT('%', #{keyword}, '%')
+                    OR name_ch LIKE CONCAT('%', #{keyword}, '%')
+                    OR code LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+        </where>
+    </select>
+
+    <select id="pageAdmin" resultType="com.caopan.platform.geo.entity.GeoRegion">
+        SELECT <include refid="RegionColumns"/>
+        FROM geo_region
+        <where>
+            <if test="countryCode != null and countryCode != ''">
+                AND country_code = #{countryCode}
+            </if>
+            <if test="parentId != null">
+                AND parent_id = #{parentId}
+            </if>
+            <if test="level != null">
+                AND level = #{level}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+            <if test="source != null and source != ''">
+                AND source = #{source}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    name LIKE CONCAT('%', #{keyword}, '%')
+                    OR name_en LIKE CONCAT('%', #{keyword}, '%')
+                    OR name_ch LIKE CONCAT('%', #{keyword}, '%')
+                    OR code LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+        </where>
+        ORDER BY level ASC, sort ASC, id ASC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="countSameNameUnderParent" resultType="long">
+        SELECT COUNT(1)
+        FROM geo_region
+        WHERE parent_id = #{parentId}
+          AND (
+            name = #{name}
+            <if test="nameEn != null and nameEn != ''">
+                OR name_en = #{nameEn}
+            </if>
+          )
+        <if test="excludeId != null">
+            AND id != #{excludeId}
+        </if>
+    </select>
+
+    <select id="nextIdForLevel" resultType="long">
+        SELECT COALESCE(MAX(id),
+            CASE #{level}
+                WHEN 2 THEN 199999999
+                WHEN 3 THEN 299999999
+                WHEN 4 THEN 399999999
+                WHEN 5 THEN 499999999
+                ELSE 0
+            END
+        ) + 1
+        FROM geo_region
+        WHERE level = #{level}
+    </select>
 </mapper>

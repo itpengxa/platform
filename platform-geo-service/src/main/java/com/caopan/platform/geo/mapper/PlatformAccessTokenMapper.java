@@ -51,4 +51,14 @@ public interface PlatformAccessTokenMapper extends BaseMapper<PlatformAccessToke
      * @return client_code，不存在则 null
      */
     String findClientCodeByTokenId(@Param("tokenId") Long tokenId);
+
+    long countAdmin(@Param("clientCode") String clientCode, @Param("status") Integer status);
+
+    java.util.List<com.caopan.platform.geo.admin.access.AccessTokenAdminService.TokenAdminRow> pageAdmin(
+            @Param("clientCode") String clientCode,
+            @Param("status") Integer status,
+            @Param("offset") int offset,
+            @Param("limit") int limit);
+
+    int revokeById(@Param("id") Long id);
 }

@@ -1,5 +1,6 @@
 package com.caopan.platform.geo.access;
 
+import com.caopan.platform.geo.config.runtime.EffectiveAuthSettings;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 
@@ -10,7 +11,7 @@ import java.util.UUID;
 
 /**
  * Token 签发分布式锁与 {@code valid:{hash}} 标记（多实例一致）。
- * <p>{@code valid} 带 TTL，避免永久 key；吊销时主动 DEL。</p>
+ * <p>前缀/TTL 从 {@link EffectiveAuthSettings} 热读取。</p>
  */
 final class AccessTokenRedisSupport {
 
@@ -19,47 +20,26 @@ final class AccessTokenRedisSupport {
             Long.class);
 
     private final StringRedisTemplate redis;
-    private final String issueLockPrefix;
-    private final String validPrefix;
-    private final long issueLockSeconds;
-    private final int issueLockRetryTimes;
-    private final long issueLockRetryMs;
-    private final Duration validTtl;
+    private final EffectiveAuthSettings authSettings;
 
-    AccessTokenRedisSupport(
-            StringRedisTemplate redis,
-            String issueLockPrefix,
-            String validPrefix,
-            long issueLockSeconds,
-            int issueLockRetryTimes,
-            long issueLockRetryMs,
-            Duration validTtl) {
+    AccessTokenRedisSupport(StringRedisTemplate redis, EffectiveAuthSettings authSettings) {
         this.redis = redis;
-        this.issueLockPrefix = issueLockPrefix;
-        this.validPrefix = validPrefix;
-        this.issueLockSeconds = Math.max(issueLockSeconds, 5L);
-        this.issueLockRetryTimes = Math.max(issueLockRetryTimes, 1);
-        this.issueLockRetryMs = Math.max(issueLockRetryMs, 10L);
-        this.validTtl = validTtl == null || validTtl.isZero() || validTtl.isNegative()
-                ? Duration.ofDays(365)
-                : validTtl;
+        this.authSettings = authSettings;
     }
 
-    /**
-     * 尝试获取 per-clientCode 签发锁。
-     *
-     * @return 锁 token（释放时传入），失败返回 null
-     */
     String tryAcquireIssueLock(String clientCode) {
-        String lockKey = issueLockPrefix + clientCode;
+        String lockKey = authSettings.issueLockKeyPrefix() + clientCode;
         String lockToken = UUID.randomUUID().toString();
-        for (int i = 0; i < issueLockRetryTimes; i++) {
+        long issueLockSeconds = Math.max(authSettings.issueLockSeconds(), 5L);
+        int retries = Math.max(authSettings.issueLockRetryTimes(), 1);
+        long retryMs = Math.max(authSettings.issueLockRetryMs(), 10L);
+        for (int i = 0; i < retries; i++) {
             Boolean ok = redis.opsForValue().setIfAbsent(
                     lockKey, lockToken, Duration.ofSeconds(issueLockSeconds));
             if (Boolean.TRUE.equals(ok)) {
                 return lockToken;
             }
-            sleepQuietly(issueLockRetryMs);
+            sleepQuietly(retryMs);
         }
         return null;
     }
@@ -68,7 +48,7 @@ final class AccessTokenRedisSupport {
         if (lockToken == null) {
             return;
         }
-        String lockKey = issueLockPrefix + clientCode;
+        String lockKey = authSettings.issueLockKeyPrefix() + clientCode;
         redis.execute(UNLOCK_SCRIPT, Collections.singletonList(lockKey), lockToken);
     }
 
@@ -76,11 +56,8 @@ final class AccessTokenRedisSupport {
         return Boolean.TRUE.equals(redis.hasKey(validKey(tokenHash)));
     }
 
-    /**
-     * 标记 Token 有效；TTL 对齐配置，防止永久驻留。
-     */
     void markValid(String tokenHash) {
-        redis.opsForValue().set(validKey(tokenHash), "1", validTtl);
+        redis.opsForValue().set(validKey(tokenHash), "1", validTtl());
     }
 
     void revokeValid(List<String> tokenHashes) {
@@ -94,8 +71,12 @@ final class AccessTokenRedisSupport {
         }
     }
 
+    private Duration validTtl() {
+        return Duration.ofDays(Math.max(authSettings.validTtlDays(), 1L));
+    }
+
     private String validKey(String tokenHash) {
-        return validPrefix + tokenHash;
+        return authSettings.validKeyPrefix() + tokenHash;
     }
 
     private static void sleepQuietly(long ms) {

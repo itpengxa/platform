@@ -5,9 +5,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletionException;
@@ -172,14 +179,134 @@ public class TieredCache {
      * @param key 缓存键
      */
     public void evict(String key) {
-        localCache.invalidate(key);
-        if (!redisEnabled) {
+        invalidateLocal(key);
+        deleteRedisKey(key);
+    }
+
+    /** 仅失效本机 L1。 */
+    public void invalidateLocal(String key) {
+        if (key != null) {
+            localCache.invalidate(key);
+        }
+    }
+
+    /** 批量仅失效本机 L1。 */
+    public void invalidateLocal(Collection<String> keys) {
+        if (keys == null || keys.isEmpty()) {
+            return;
+        }
+        localCache.invalidateAll(keys);
+    }
+
+    /** 清空本机 L1（本 Bean 仅承载 geo 数据缓存）。 */
+    public void invalidateLocalAll() {
+        localCache.invalidateAll();
+    }
+
+    public boolean redisEnabled() {
+        return redisEnabled;
+    }
+
+    public long localEstimatedSize() {
+        return localCache.estimatedSize();
+    }
+
+    /**
+     * 按 Redis SCAN 模式删除 L2 键；不触碰 L1。
+     *
+     * @param patterns Redis MATCH 模式列表
+     * @param dryRun   true 只计数不删除
+     * @return 匹配（或已删除）键数量
+     */
+    public long clearRedisByPatterns(Collection<String> patterns, boolean dryRun) {
+        if (!redisEnabled || patterns == null || patterns.isEmpty()) {
+            return 0L;
+        }
+        Set<String> matched = scanRedisKeys(patterns);
+        if (dryRun || matched.isEmpty()) {
+            return matched.size();
+        }
+        return deleteRedisKeys(matched);
+    }
+
+    /**
+     * SCAN 匹配键（排除 rl）；供 dryRun / 清理复用。
+     */
+    public Set<String> scanRedisKeys(Collection<String> patterns) {
+        Set<String> matched = new HashSet<>();
+        if (!redisEnabled || patterns == null) {
+            return matched;
+        }
+        for (String pattern : patterns) {
+            if (pattern == null || pattern.isBlank()) {
+                continue;
+            }
+            try {
+                ScanOptions options = ScanOptions.scanOptions().match(pattern).count(200).build();
+                try (Cursor<String> cursor = redisTemplate.scan(options)) {
+                    while (cursor.hasNext()) {
+                        matched.add(cursor.next());
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("L2 scan failed, pattern={}, err={}", pattern, e.toString());
+            }
+        }
+        matched.removeIf(k -> k == null || k.startsWith(GeoCacheKeys.PREFIX + "rl:") || !GeoCacheKeys.isGeoDataKey(k));
+        return matched;
+    }
+
+    /**
+     * 精确删除 L2 键列表；跳过非 geo 数据键与 rl。
+     */
+    public long deleteRedisKeysExact(Collection<String> keys, boolean dryRun) {
+        if (!redisEnabled || keys == null || keys.isEmpty()) {
+            return 0L;
+        }
+        List<String> safe = new ArrayList<>();
+        for (String key : keys) {
+            if (GeoCacheKeys.isGeoDataKey(key)) {
+                safe.add(key);
+            }
+        }
+        if (dryRun || safe.isEmpty()) {
+            return safe.size();
+        }
+        return deleteRedisKeys(safe);
+    }
+
+    private void deleteRedisKey(String key) {
+        if (!redisEnabled || key == null) {
             return;
         }
         try {
             redisTemplate.delete(key);
         } catch (Exception e) {
             log.warn("L2 evict failed, key={}, err={}", key, e.toString());
+        }
+    }
+
+    private long deleteRedisKeys(Collection<String> keys) {
+        if (!redisEnabled || keys == null || keys.isEmpty()) {
+            return 0L;
+        }
+        try {
+            Long n = redisTemplate.delete(keys);
+            return n == null ? 0L : n;
+        } catch (Exception e) {
+            log.warn("L2 batch delete failed, size={}, err={}", keys.size(), e.toString());
+            long deleted = 0L;
+            for (String key : keys) {
+                try {
+                    Boolean ok = redisTemplate.delete(key);
+                    if (Boolean.TRUE.equals(ok)) {
+                        deleted++;
+                    }
+                } catch (Exception ignored) {
+                    // continue
+                }
+            }
+            return deleted;
         }
     }
 

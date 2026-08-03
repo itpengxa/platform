@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caopan.platform.geo.mapper.PlatformApiAccessStatMapper">
+
+    <select id="selectOverview" resultType="com.caopan.platform.geo.admin.StatsAdminService$OverviewStats">
+        SELECT COUNT(1) AS totalCalls,
+               COALESCE(SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END), 0) AS successCalls,
+               COUNT(DISTINCT client_code) AS activeClients,
+               0 AS successRate
+        FROM platform_api_access_stat
+        WHERE called_at &gt;= #{from} AND called_at &lt; #{to}
+    </select>
+
+    <select id="selectByClient" resultType="com.caopan.platform.geo.admin.StatsAdminService$ClientStatRow">
+        SELECT client_code AS clientCode,
+               COUNT(1) AS callCount,
+               SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS successCount
+        FROM platform_api_access_stat
+        WHERE called_at &gt;= #{from} AND called_at &lt; #{to}
+        <if test="clientCode != null and clientCode != ''">
+            AND client_code = #{clientCode}
+        </if>
+        GROUP BY client_code
+        ORDER BY callCount DESC
+    </select>
+
+    <select id="selectTimeline" resultType="com.caopan.platform.geo.admin.StatsAdminService$TimelineRow">
+        SELECT
+        <choose>
+            <when test="granularity == 'minute'">
+                DATE_FORMAT(called_at, '%Y-%m-%d %H:%i:00') AS bucket
+            </when>
+            <when test="granularity == 'day'">
+                DATE_FORMAT(called_at, '%Y-%m-%d') AS bucket
+            </when>
+            <otherwise>
+                DATE_FORMAT(called_at, '%Y-%m-%d %H:00:00') AS bucket
+            </otherwise>
+        </choose>,
+        COUNT(1) AS callCount,
+        SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS successCount
+        FROM platform_api_access_stat
+        WHERE called_at &gt;= #{from} AND called_at &lt; #{to}
+        <if test="clientCode != null and clientCode != ''">
+            AND client_code = #{clientCode}
+        </if>
+        GROUP BY bucket
+        ORDER BY bucket ASC
+    </select>
+
+    <select id="selectHotRegions" resultType="com.caopan.platform.geo.admin.StatsAdminService$HotRegionRow">
+        SELECT s.region_id AS regionId,
+               COALESCE(s.country_code, r.country_code) AS countryCode,
+               COALESCE(s.region_level, r.level) AS level,
+               r.name AS name,
+               COUNT(1) AS callCount
+        FROM platform_api_access_stat s
+        LEFT JOIN geo_region r ON r.id = s.region_id
+        WHERE s.called_at &gt;= #{from} AND s.called_at &lt; #{to}
+          AND s.region_id IS NOT NULL
+        <if test="countryCode != null and countryCode != ''">
+            AND COALESCE(s.country_code, r.country_code) = #{countryCode}
+        </if>
+        <if test="regionLevel != null">
+            AND COALESCE(s.region_level, r.level) = #{regionLevel}
+        </if>
+        GROUP BY s.region_id, COALESCE(s.country_code, r.country_code), COALESCE(s.region_level, r.level), r.name
+        ORDER BY callCount DESC
+        LIMIT #{limit}
+    </select>
+</mapper>

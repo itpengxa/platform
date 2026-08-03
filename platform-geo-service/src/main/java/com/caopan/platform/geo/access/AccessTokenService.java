@@ -3,8 +3,8 @@ package com.caopan.platform.geo.access;
 import com.caopan.platform.common.auth.CallerContext;
 import com.caopan.platform.common.exception.BizException;
 import com.caopan.platform.common.exception.ErrorCode;
-import com.caopan.platform.geo.cache.GeoCacheProperties;
-import com.caopan.platform.geo.config.GeoAuthProperties;
+import com.caopan.platform.geo.config.runtime.EffectiveAuthSettings;
+import com.caopan.platform.geo.config.runtime.EffectiveCacheSettings;
 import com.caopan.platform.geo.entity.PlatformAccessClient;
 import com.caopan.platform.geo.entity.PlatformAccessToken;
 import com.caopan.platform.geo.mapper.PlatformAccessClientMapper;
@@ -45,7 +45,9 @@ public class AccessTokenService {
 
     private final PlatformAccessClientMapper clientMapper;
     private final PlatformAccessTokenMapper tokenMapper;
-    private final AccessTokenRedisSupport redisSupport;
+    private final StringRedisTemplate redisTemplate;
+    private final EffectiveCacheSettings cacheSettings;
+    private final EffectiveAuthSettings authSettings;
     private final TransactionTemplate transactionTemplate;
 
     public AccessTokenService(
@@ -53,30 +55,24 @@ public class AccessTokenService {
             PlatformAccessTokenMapper tokenMapper,
             ObjectProvider<StringRedisTemplate> redisProvider,
             PlatformTransactionManager transactionManager,
-            GeoCacheProperties cacheProperties,
-            GeoAuthProperties authProperties) {
+            EffectiveCacheSettings cacheSettings,
+            EffectiveAuthSettings authSettings) {
         this.clientMapper = clientMapper;
         this.tokenMapper = tokenMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
-        StringRedisTemplate redis = redisProvider.getIfAvailable();
-        boolean sync = cacheProperties.redisEnabled()
-                && authProperties.redisTokenSyncEnabled()
-                && redis != null;
-        if (sync) {
-            this.redisSupport = new AccessTokenRedisSupport(
-                    redis,
-                    authProperties.issueLockKeyPrefix(),
-                    authProperties.validKeyPrefix(),
-                    authProperties.issueLockSeconds(),
-                    authProperties.issueLockRetryTimes(),
-                    authProperties.issueLockRetryMs(),
-                    Duration.ofDays(Math.max(authProperties.validTtlDays(), 1L)));
-        } else {
-            this.redisSupport = null;
-            if (authProperties.redisTokenSyncEnabled() && cacheProperties.redisEnabled()) {
-                log.warn("platform.geo.auth.redis-token-sync-enabled but Redis unavailable — token sync disabled");
-            }
+        this.redisTemplate = redisProvider.getIfAvailable();
+        this.cacheSettings = cacheSettings;
+        this.authSettings = authSettings;
+    }
+
+    private AccessTokenRedisSupport redisSupportOrNull() {
+        boolean sync = cacheSettings.redisEnabled()
+                && authSettings.redisTokenSyncEnabled()
+                && redisTemplate != null;
+        if (!sync) {
+            return null;
         }
+        return new AccessTokenRedisSupport(redisTemplate, authSettings);
     }
 
     /**
@@ -85,6 +81,7 @@ public class AccessTokenService {
      */
     public IssuedToken issue(String clientCode, String clientName) {
         String code = normalizeClientCode(clientCode);
+        AccessTokenRedisSupport redisSupport = redisSupportOrNull();
         String lockToken = null;
         if (redisSupport != null) {
             lockToken = redisSupport.tryAcquireIssueLock(code);
@@ -104,23 +101,17 @@ public class AccessTokenService {
     private IssuedToken issueUnderLock(String code, String clientName) {
         PlatformAccessClient client = clientMapper.findByCode(code);
         LocalDateTime now = LocalDateTime.now();
+        // GEO-002：禁止自动建 client；须管理端白名单预先创建，且 allow_issue=1
         if (client == null) {
-            client = new PlatformAccessClient();
-            client.setClientCode(code);
-            client.setClientName(StringUtils.hasText(clientName) ? clientName.trim() : code);
-            client.setStatus(1);
-            client.setCreatedAt(now);
+            throw new BizException(ErrorCode.CLIENT_NOT_FOUND);
+        }
+        if (!Objects.equals(client.getStatus(), 1) || !Objects.equals(client.getAllowIssue(), 1)) {
+            throw new BizException(ErrorCode.CLIENT_NOT_ALLOWED);
+        }
+        if (StringUtils.hasText(clientName) && !clientName.trim().equals(client.getClientName())) {
+            client.setClientName(clientName.trim());
             client.setUpdatedAt(now);
-            clientMapper.insert(client);
-        } else {
-            if (!Objects.equals(client.getStatus(), 1)) {
-                throw new BizException(ErrorCode.PARAM_INVALID);
-            }
-            if (StringUtils.hasText(clientName) && !clientName.trim().equals(client.getClientName())) {
-                client.setClientName(clientName.trim());
-                client.setUpdatedAt(now);
-                clientMapper.updateById(client);
-            }
+            clientMapper.updateById(client);
         }
 
         List<String> oldHashes = tokenMapper.listActiveTokenHashesByClientId(client.getId());
@@ -140,6 +131,7 @@ public class AccessTokenService {
         row.setUpdatedAt(now);
         tokenMapper.insert(row);
 
+        AccessTokenRedisSupport redisSupport = redisSupportOrNull();
         if (redisSupport != null) {
             redisSupport.revokeValid(oldHashes);
             redisSupport.markValid(hash);
@@ -158,6 +150,7 @@ public class AccessTokenService {
             throw new BizException(ErrorCode.UNAUTHORIZED);
         }
         String hash = sha256Hex(rawToken.trim());
+        AccessTokenRedisSupport redisSupport = redisSupportOrNull();
 
         TokenCallerRow row = tokenMapper.findActiveCallerByHash(hash);
         if (row == null || !StringUtils.hasText(row.clientCode())) {

@@ -17,8 +17,20 @@ public enum ErrorCode {
     REGION_NOT_FOUND(40003, "error.region_not_found", "Region not found"),
     /** IP 限流触发（HTTP 429） */
     RATE_LIMITED(40029, "error.rate_limited", "Too many requests, please retry later"),
+    /** 接入方不存在（未入白名单） */
+    CLIENT_NOT_FOUND(40010, "error.client_not_found", "Access client not found"),
+    /** 接入方不允许签发或已停用 */
+    CLIENT_NOT_ALLOWED(40011, "error.client_not_allowed", "Access client not allowed to issue token"),
+    /** 同父同名区划已存在 */
+    REGION_DUPLICATE(40012, "error.region_duplicate", "Region already exists under parent"),
+    /** 父节点不合法（停用/层级已满等） */
+    PARENT_INVALID(40013, "error.parent_invalid", "Parent region invalid"),
+    /** 上报频控 */
+    REPORT_RATE_LIMITED(40014, "error.report_rate_limited", "Report rate limited"),
     /** 内部 Token 鉴权失败（HTTP 401） */
     UNAUTHORIZED(40100, "error.unauthorized", "Unauthorized"),
+    /** 管理端鉴权失败（HTTP 401） */
+    ADMIN_UNAUTHORIZED(40101, "error.admin_unauthorized", "Admin unauthorized"),
     /** 未捕获的系统异常 */
     SYSTEM_ERROR(50000, "error.system", "Internal server error");
 

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caopan.platform.geo.mapper.PlatformAdminSessionMapper">
+
+    <select id="findActiveCallerByHash" resultType="com.caopan.platform.geo.access.AdminSessionCaller">
+        SELECT s.id AS sessionId, u.id AS userId, u.username AS username, u.display_name AS displayName
+        FROM platform_admin_session s
+        INNER JOIN platform_admin_user u ON u.id = s.user_id
+        WHERE s.token_hash = #{tokenHash}
+          AND s.status = 1
+          AND s.expire_at &gt; NOW()
+          AND u.status = 1
+        LIMIT 1
+    </select>
+
+    <update id="revokeByTokenHash">
+        UPDATE platform_admin_session
+        SET status = 0, updated_at = NOW()
+        WHERE token_hash = #{tokenHash} AND status = 1
+    </update>
+
+    <update id="revokeActiveByUserId">
+        UPDATE platform_admin_session
+        SET status = 0, updated_at = NOW()
+        WHERE user_id = #{userId} AND status = 1
+    </update>
+</mapper>

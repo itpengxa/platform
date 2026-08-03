@@ -83,3 +83,16 @@ platform:
       exception-enabled: true
       stat-enabled: true
       params-max-length: 2048
+    admin:
+      enabled: true
+      # 已改为账号密码登录；secret 仅兼容旧 Header，可留空
+      secret: ${PLATFORM_ADMIN_SECRET:}
+      bootstrap-username: ${PLATFORM_ADMIN_BOOTSTRAP_USER:admin}
+      bootstrap-password: ${PLATFORM_ADMIN_BOOTSTRAP_PASSWORD:admin}
+      session-ttl-days: 7
+    report:
+      geocode-provider: nominatim
+      google-api-key: ${GOOGLE_MAPS_API_KEY:}
+      max-parent-distance-km: 50
+      auto-create-enabled: true
+      rate-limit-per-token-per-hour: 30

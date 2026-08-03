@@ -84,4 +84,17 @@ class TieredCacheTest {
         cache.put("s", value, Duration.ofMinutes(1));
         assertSame(value, cache.get("s", STRING, Duration.ofMinutes(1), () -> "other"));
     }
+
+    @Test
+    void invalidateLocalAll_forcesReload() {
+        AtomicInteger loads = new AtomicInteger();
+        cache.put("k", "v", Duration.ofMinutes(1));
+        cache.invalidateLocalAll();
+        String v = cache.get("k", STRING, Duration.ofMinutes(1), () -> {
+            loads.incrementAndGet();
+            return "reloaded";
+        });
+        assertEquals("reloaded", v);
+        assertEquals(1, loads.get());
+    }
 }

@@ -3,8 +3,9 @@ package com.caopan.platform.geo.access;
 import com.caopan.platform.common.auth.CallerContext;
 import com.caopan.platform.common.exception.BizException;
 import com.caopan.platform.common.exception.ErrorCode;
-import com.caopan.platform.geo.cache.GeoCacheProperties;
-import com.caopan.platform.geo.config.GeoAuthProperties;
+import com.caopan.platform.geo.config.runtime.EffectiveAuthSettings;
+import com.caopan.platform.geo.config.runtime.EffectiveCacheSettings;
+import com.caopan.platform.geo.config.runtime.EffectiveConfigRegistry;
 import com.caopan.platform.geo.entity.PlatformAccessClient;
 import com.caopan.platform.geo.entity.PlatformAccessToken;
 import com.caopan.platform.geo.mapper.PlatformAccessClientMapper;
@@ -22,6 +23,9 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -53,25 +57,56 @@ class AccessTokenServiceTest {
         when(redisProvider.getIfAvailable()).thenReturn(null);
         TransactionStatus status = mock(TransactionStatus.class);
         lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class))).thenReturn(status);
-        GeoCacheProperties cache = new GeoCacheProperties(
-                false, 10_000L, 10L, 24L, 24L, 24L, 24L, 12L, 0L, 30L, 20_000, 4);
-        GeoAuthProperties auth = new GeoAuthProperties(
-                false, "", true,
-                "platform:auth:issue-lock:", "platform:auth:valid:",
-                60L, 8, 50L, 365L);
+        EffectiveConfigRegistry registry = new EffectiveConfigRegistry();
+        Map<String, String> m = new HashMap<>();
+        m.put("platform.geo.cache.redis-enabled", "false");
+        m.put("platform.geo.auth.enabled", "false");
+        m.put("platform.geo.auth.issue-secret", "");
+        m.put("platform.geo.auth.redis-token-sync-enabled", "true");
+        m.put("platform.geo.auth.valid-ttl-days", "365");
+        m.put("platform.geo.auth.issue-lock-key-prefix", "platform:auth:issue-lock:");
+        m.put("platform.geo.auth.valid-key-prefix", "platform:auth:valid:");
+        m.put("platform.geo.auth.issue-lock-seconds", "60");
+        m.put("platform.geo.auth.issue-lock-retry-times", "8");
+        m.put("platform.geo.auth.issue-lock-retry-ms", "50");
+        registry.replaceAll(m, Set.of());
         service = new AccessTokenService(
-                clientMapper, tokenMapper, redisProvider, transactionManager, cache, auth);
+                clientMapper, tokenMapper, redisProvider, transactionManager,
+                new EffectiveCacheSettings(registry),
+                new EffectiveAuthSettings(registry));
     }
 
     @Test
-    void issue_createsClientAndToken() {
+    void issue_withoutExistingClient_throwsClientNotFound() {
         when(clientMapper.findByCode("crm")).thenReturn(null);
-        when(tokenMapper.listActiveTokenHashesByClientId(any())).thenReturn(Collections.emptyList());
-        doAnswer(inv -> {
-            PlatformAccessClient c = inv.getArgument(0);
-            c.setId(10L);
-            return 1;
-        }).when(clientMapper).insert(any(PlatformAccessClient.class));
+        BizException ex = assertThrows(BizException.class, () -> service.issue("crm", "CRM"));
+        assertEquals(ErrorCode.CLIENT_NOT_FOUND.getCode(), ex.getCode());
+    }
+
+    @Test
+    void issue_allowIssueZero_throwsClientNotAllowed() {
+        PlatformAccessClient client = enabledClient("crm", 1);
+        client.setAllowIssue(0);
+        when(clientMapper.findByCode("crm")).thenReturn(client);
+        BizException ex = assertThrows(BizException.class, () -> service.issue("crm", null));
+        assertEquals(ErrorCode.CLIENT_NOT_ALLOWED.getCode(), ex.getCode());
+    }
+
+    @Test
+    void issue_disabledClient_throwsClientNotAllowed() {
+        PlatformAccessClient client = enabledClient("crm", 0);
+        client.setAllowIssue(1);
+        when(clientMapper.findByCode("crm")).thenReturn(client);
+        BizException ex = assertThrows(BizException.class, () -> service.issue("crm", null));
+        assertEquals(ErrorCode.CLIENT_NOT_ALLOWED.getCode(), ex.getCode());
+    }
+
+    @Test
+    void issue_happyPath_withExistingClient() {
+        PlatformAccessClient client = enabledClient("crm", 1);
+        client.setAllowIssue(1);
+        when(clientMapper.findByCode("crm")).thenReturn(client);
+        when(tokenMapper.listActiveTokenHashesByClientId(1L)).thenReturn(Collections.emptyList());
         doAnswer(inv -> {
             PlatformAccessToken t = inv.getArgument(0);
             t.setId(100L);
@@ -82,7 +117,7 @@ class AccessTokenServiceTest {
         assertEquals("crm", issued.clientCode());
         assertNotNull(issued.token());
         assertTrue(issued.token().length() >= 32);
-        verify(tokenMapper).revokeActiveByClientId(10L);
+        verify(tokenMapper).revokeActiveByClientId(1L);
 
         ArgumentCaptor<PlatformAccessToken> cap = ArgumentCaptor.forClass(PlatformAccessToken.class);
         verify(tokenMapper).insert(cap.capture());
@@ -112,14 +147,12 @@ class AccessTokenServiceTest {
         assertEquals(ErrorCode.PARAM_INVALID.getCode(), ex.getCode());
     }
 
-    @Test
-    void issue_disabledClient_throws() {
+    private static PlatformAccessClient enabledClient(String code, int status) {
         PlatformAccessClient client = new PlatformAccessClient();
         client.setId(1L);
-        client.setClientCode("crm");
-        client.setStatus(0);
-        when(clientMapper.findByCode("crm")).thenReturn(client);
-        BizException ex = assertThrows(BizException.class, () -> service.issue("crm", null));
-        assertEquals(ErrorCode.PARAM_INVALID.getCode(), ex.getCode());
+        client.setClientCode(code);
+        client.setClientName(code);
+        client.setStatus(status);
+        return client;
     }
 }

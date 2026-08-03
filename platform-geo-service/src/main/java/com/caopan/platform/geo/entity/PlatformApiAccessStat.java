@@ -31,6 +31,12 @@ public class PlatformApiAccessStat {
     private String errorType;
     /** 耗时毫秒 */
     private Integer costMs;
+    /** 从入参解析的国家码（GEO-002） */
+    private String countryCode;
+    /** 被查节点/父节点 ID（GEO-002） */
+    private Long regionId;
+    /** 层级 1-5（GEO-002） */
+    private Integer regionLevel;
     /** 落库时间 */
     private LocalDateTime createdAt;
 
@@ -50,6 +56,12 @@ public class PlatformApiAccessStat {
     public void setErrorType(String errorType) { this.errorType = errorType; }
     public Integer getCostMs() { return costMs; }
     public void setCostMs(Integer costMs) { this.costMs = costMs; }
+    public String getCountryCode() { return countryCode; }
+    public void setCountryCode(String countryCode) { this.countryCode = countryCode; }
+    public Long getRegionId() { return regionId; }
+    public void setRegionId(Long regionId) { this.regionId = regionId; }
+    public Integer getRegionLevel() { return regionLevel; }
+    public void setRegionLevel(Integer regionLevel) { this.regionLevel = regionLevel; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

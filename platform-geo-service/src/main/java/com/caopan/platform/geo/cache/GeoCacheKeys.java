@@ -12,6 +12,22 @@ public final class GeoCacheKeys {
     /** 缓存键统一前缀 */
     public static final String PREFIX = "platform:geo:";
 
+    /** 地理数据键模式（不含限流 rl / 鉴权） */
+    public static final String PATTERN_COUNTRIES = PREFIX + "countries*";
+    public static final String PATTERN_CHILDREN = PREFIX + "children:*";
+    public static final String PATTERN_PATH = PREFIX + "path:*";
+    public static final String PATTERN_REGION = PREFIX + "region:*";
+    public static final String PATTERN_TREE = PREFIX + "tree:*";
+
+    /** 全量数据清理用的白名单前缀模式（严禁 platform:geo:* 一把梭） */
+    public static final java.util.List<String> DATA_CLEAR_PATTERNS = java.util.List.of(
+            PATTERN_COUNTRIES, PATTERN_CHILDREN, PATTERN_PATH, PATTERN_REGION, PATTERN_TREE);
+
+    /** 业务键目录（变量名 / 模板 / 参数），供管理端下拉。 */
+    public static java.util.List<java.util.Map<String, Object>> catalog() {
+        return GeoCacheKeyType.catalog();
+    }
+
     /** L1 Caffeine 默认过期（由 CacheConfig 配置；此处作文档常量） */
     public static final Duration L1_TTL = Duration.ofMinutes(10);
     /** 国家列表 L2 TTL */
@@ -80,5 +96,31 @@ public final class GeoCacheKeys {
         long rid = rootId == null ? 0L : rootId;
         int d = depth == null ? 0 : depth;
         return PREFIX + "tree:" + countryCode + ":" + rid + ":" + d;
+    }
+
+    /**
+     * 某国树缓存 SCAN 模式。
+     */
+    public static String treeCountryPattern(String countryCode) {
+        String cc = countryCode == null ? "" : countryCode.trim().toUpperCase();
+        return PREFIX + "tree:" + cc + ":*";
+    }
+
+    /**
+     * 是否为地理数据缓存键（排除限流等）。
+     */
+    public static boolean isGeoDataKey(String key) {
+        if (key == null || !key.startsWith(PREFIX)) {
+            return false;
+        }
+        String rest = key.substring(PREFIX.length());
+        if (rest.startsWith("rl:")) {
+            return false;
+        }
+        return rest.startsWith("countries")
+                || rest.startsWith("children:")
+                || rest.startsWith("path:")
+                || rest.startsWith("region:")
+                || rest.startsWith("tree:");
     }
 }

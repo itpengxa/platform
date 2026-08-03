@@ -3,7 +3,9 @@ package com.caopan.platform;
 import com.caopan.platform.config.GeoRateLimitProperties;
 import com.caopan.platform.geo.cache.GeoCacheProperties;
 import com.caopan.platform.geo.config.GeoAccessLogProperties;
+import com.caopan.platform.geo.config.GeoAdminProperties;
 import com.caopan.platform.geo.config.GeoAuthProperties;
+import com.caopan.platform.geo.config.GeoReportProperties;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -21,7 +23,9 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
         GeoCacheProperties.class,
         GeoAuthProperties.class,
         GeoAccessLogProperties.class,
-        GeoRateLimitProperties.class
+        GeoRateLimitProperties.class,
+        GeoAdminProperties.class,
+        GeoReportProperties.class
 })
 public class PlatformApplication {
 

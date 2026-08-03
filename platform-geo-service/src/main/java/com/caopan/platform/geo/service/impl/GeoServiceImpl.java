@@ -243,6 +243,8 @@ public class GeoServiceImpl implements GeoService {
         vo.setRegionType(r.getRegionType());
         vo.setPath(r.getPath());
         vo.setIsLeaf(Objects.equals(r.getIsLeaf(), 1));
+        vo.setLatitude(r.getLatitude());
+        vo.setLongitude(r.getLongitude());
     }
 
     private static void requirePositiveId(Long id) {

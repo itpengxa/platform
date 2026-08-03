@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caopan.platform.geo.mapper.PlatformAdminUserMapper">
+
+    <sql id="cols">
+        id, username, password_salt AS passwordSalt, password_hash AS passwordHash,
+        display_name AS displayName, status, created_at AS createdAt, updated_at AS updatedAt
+    </sql>
+
+    <select id="findByUsername" resultType="com.caopan.platform.geo.entity.PlatformAdminUser">
+        SELECT <include refid="cols"/>
+        FROM platform_admin_user
+        WHERE username = #{username}
+        LIMIT 1
+    </select>
+
+    <select id="countAll" resultType="long">
+        SELECT COUNT(1) FROM platform_admin_user
+    </select>
+
+    <select id="countAdmin" resultType="long">
+        SELECT COUNT(1) FROM platform_admin_user
+        <where>
+            <if test="username != null and username != ''">
+                AND username LIKE CONCAT(#{username}, '%')
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+        </where>
+    </select>
+
+    <select id="pageAdmin" resultType="com.caopan.platform.geo.entity.PlatformAdminUser">
+        SELECT <include refid="cols"/>
+        FROM platform_admin_user
+        <where>
+            <if test="username != null and username != ''">
+                AND username LIKE CONCAT(#{username}, '%')
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+        </where>
+        ORDER BY id DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+</mapper>

@@ -42,4 +42,41 @@
         WHERE t.id = #{tokenId}
         LIMIT 1
     </select>
+
+    <select id="countAdmin" resultType="long">
+        SELECT COUNT(1)
+        FROM platform_access_token t
+        INNER JOIN platform_access_client c ON c.id = t.client_id
+        <where>
+            <if test="clientCode != null and clientCode != ''">
+                AND c.client_code LIKE CONCAT(#{clientCode}, '%')
+            </if>
+            <if test="status != null">
+                AND t.status = #{status}
+            </if>
+        </where>
+    </select>
+
+    <select id="pageAdmin" resultType="com.caopan.platform.geo.admin.access.AccessTokenAdminService$TokenAdminRow">
+        SELECT t.id AS id, c.client_code AS clientCode, t.token_prefix AS tokenPrefix,
+               t.status AS status, t.created_at AS createdAt
+        FROM platform_access_token t
+        INNER JOIN platform_access_client c ON c.id = t.client_id
+        <where>
+            <if test="clientCode != null and clientCode != ''">
+                AND c.client_code LIKE CONCAT(#{clientCode}, '%')
+            </if>
+            <if test="status != null">
+                AND t.status = #{status}
+            </if>
+        </where>
+        ORDER BY t.id DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <update id="revokeById">
+        UPDATE platform_access_token
+        SET status = 0, updated_at = NOW()
+        WHERE id = #{id} AND status = 1
+    </update>
 </mapper>

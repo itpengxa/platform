@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caopan.platform.geo.mapper.GeoRegionReportMapper">
+
+    <sql id="ReportColumns">
+        id, client_code AS clientCode, parent_id AS parentId, country_code AS countryCode,
+        missing_name AS missingName, missing_name_en AS missingNameEn, missing_name_ch AS missingNameCh,
+        remark, geocode_lat AS geocodeLat, geocode_lng AS geocodeLng, distance_km AS distanceKm,
+        result_status AS resultStatus, region_id AS regionId, geocode_raw AS geocodeRaw,
+        created_at AS createdAt, updated_at AS updatedAt
+    </sql>
+
+    <select id="countAdminPage" resultType="long">
+        SELECT COUNT(1) FROM geo_region_report
+        <where>
+            <if test="resultStatus != null and resultStatus != ''">
+                AND result_status = #{resultStatus}
+            </if>
+            <if test="countryCode != null and countryCode != ''">
+                AND country_code = #{countryCode}
+            </if>
+            <if test="clientCode != null and clientCode != ''">
+                AND client_code LIKE CONCAT(#{clientCode}, '%')
+            </if>
+            <if test="from != null">
+                AND created_at &gt;= #{from}
+            </if>
+            <if test="to != null">
+                AND created_at &lt;= #{to}
+            </if>
+        </where>
+    </select>
+
+    <select id="pageAdmin" resultType="com.caopan.platform.geo.entity.GeoRegionReport">
+        SELECT <include refid="ReportColumns"/>
+        FROM geo_region_report
+        <where>
+            <if test="resultStatus != null and resultStatus != ''">
+                AND result_status = #{resultStatus}
+            </if>
+            <if test="countryCode != null and countryCode != ''">
+                AND country_code = #{countryCode}
+            </if>
+            <if test="clientCode != null and clientCode != ''">
+                AND client_code LIKE CONCAT(#{clientCode}, '%')
+            </if>
+            <if test="from != null">
+                AND created_at &gt;= #{from}
+            </if>
+            <if test="to != null">
+                AND created_at &lt;= #{to}
+            </if>
+        </where>
+        ORDER BY id DESC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="countByParentAndName" resultType="long">
+        SELECT COUNT(1)
+        FROM geo_region
+        WHERE parent_id = #{parentId}
+          AND status = 1
+          AND name = #{missingName}
+    </select>
+
+    <select id="countRecentByClient" resultType="long">
+        SELECT COUNT(1)
+        FROM geo_region_report
+        WHERE client_code = #{clientCode}
+          AND created_at &gt;= #{from}
+    </select>
+</mapper>

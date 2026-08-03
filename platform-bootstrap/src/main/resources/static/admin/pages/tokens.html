@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Token 管理</title>
+  <style>
+    body { margin: 0; padding: 16px; font-family: sans-serif; background: #f5f7fa; }
+    .filters { background: #fff; padding: 12px; border-radius: 6px; margin-bottom: 12px; display: flex; gap: 8px; }
+    input, select { padding: 6px 8px; border: 1px solid #d9d9d9; border-radius: 4px; }
+    .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; background: #1677ff; color: #fff; }
+    .btn-secondary { background: #fff; color: #333; border: 1px solid #d9d9d9; }
+    table { width: 100%; background: #fff; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; font-size: 13px; text-align: left; }
+    th { background: #fafafa; }
+    .tag-green { background: #f6ffed; color: #389e0d; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+    .tag-gray { background: #f5f5f5; color: #666; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+    .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); align-items: center; justify-content: center; }
+    .modal.show { display: flex; }
+    .modal-box { background: #fff; padding: 20px; border-radius: 8px; width: 420px; }
+    .form-row { margin-bottom: 10px; }
+    .form-row label { display: block; margin-bottom: 4px; font-size: 13px; color: #666; }
+    .form-row input { width: 100%; }
+    .token-box { word-break: break-all; background: #f5f5f5; padding: 10px; border-radius: 4px; font-size: 12px; margin: 12px 0; }
+  </style>
+</head>
+<body>
+<div class="filters">
+  <input id="clientCode" placeholder="clientCode"/>
+  <select id="status"><option value="">状态</option><option value="1">有效</option><option value="0">已吊销</option></select>
+  <button class="btn" onclick="search()">搜索</button>
+  <button class="btn" onclick="openIssue()">代签发</button>
+</div>
+<table>
+  <thead><tr><th>ID</th><th>接入方</th><th>前缀</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+  <tbody id="tbody"></tbody>
+</table>
+<div id="pager"></div>
+
+<div class="modal" id="issueModal">
+  <div class="modal-box">
+    <h3>代签发 Token</h3>
+    <div class="form-row"><label>clientCode *</label><input id="issueCode"/></div>
+    <div class="form-row"><label>clientName（可选）</label><input id="issueName"/></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeIssue()">取消</button>
+      <button class="btn" onclick="doIssue()">签发</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="tokenModal">
+  <div class="modal-box">
+    <h3>Token（仅显示一次）</h3>
+    <div class="token-box" id="tokenValue"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeTokenModal()">已复制/关闭</button>
+    </div>
+  </div>
+</div>
+
+<script src="../common/http.js"></script>
+<script src="../common/pager.js"></script>
+<script>
+  const pager = AdminPager.mount('pager', { pageSize: 20, onChange: () => load() });
+  function search() { pager.reset(); load(); }
+  async function load() {
+    const q = new URLSearchParams({ pageNum: pager.pageNum, pageSize: pager.pageSize });
+    const cc = document.getElementById('clientCode').value.trim();
+    const st = document.getElementById('status').value;
+    if (cc) q.set('clientCode', cc);
+    if (st !== '') q.set('status', st);
+    const data = await AdminHttp.api('/admin/platform/v1/tokens/page?' + q);
+    pager.apply(data);
+    const list = data.list || [];
+    document.getElementById('tbody').innerHTML = list.length ? list.map(t => `<tr>
+      <td>${t.id}</td><td>${t.clientCode}</td><td>${t.tokenPrefix}…</td>
+      <td>${t.status===1?'<span class="tag-green">有效</span>':'<span class="tag-gray">已吊销</span>'}</td>
+      <td>${(t.createdAt||'').replace('T',' ')}</td>
+      <td>${t.status===1?`<button class="btn btn-secondary" style="font-size:12px" onclick="revoke(${t.id})">吊销</button>`:'-'}</td></tr>`).join('') : '<tr><td colspan="6" style="color:#999;text-align:center">暂无数据</td></tr>';
+  }
+  function openIssue() {
+    document.getElementById('issueCode').value = document.getElementById('clientCode').value.trim();
+    document.getElementById('issueName').value = '';
+    document.getElementById('issueModal').classList.add('show');
+  }
+  function closeIssue() { document.getElementById('issueModal').classList.remove('show'); }
+  async function doIssue() {
+    const clientCode = document.getElementById('issueCode').value.trim();
+    if (!clientCode) { alert('请填写 clientCode'); return; }
+    const clientName = document.getElementById('issueName').value.trim() || clientCode;
+    const data = await AdminHttp.api('/admin/platform/v1/tokens/issue', {
+      method: 'POST', body: JSON.stringify({ clientCode, clientName })
+    });
+    closeIssue();
+    document.getElementById('tokenValue').textContent = data.token;
+    document.getElementById('tokenModal').classList.add('show');
+    load();
+  }
+  function closeTokenModal() { document.getElementById('tokenModal').classList.remove('show'); }
+  async function revoke(id) {
+    if (!confirm('确认吊销?')) return;
+    await AdminHttp.api('/admin/platform/v1/tokens/' + id + '/revoke', { method: 'POST' });
+    load();
+  }
+  load();
+</script>
+</body>
+</html>

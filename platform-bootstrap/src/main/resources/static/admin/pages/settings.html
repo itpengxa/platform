@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <title>系统配置</title>
+  <style>
+    body { margin: 0; padding: 16px; font-family: sans-serif; background: #f5f7fa; color: #333; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+    .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; background: #1677ff; color: #fff; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-secondary { background: #fff; color: #333; border: 1px solid #d9d9d9; }
+    .btn-danger { background: #fff; color: #cf1322; border: 1px solid #ffa39e; }
+    .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; }
+    .tab {
+      padding: 8px 14px; border: 1px solid #d9d9d9; background: #fff; border-radius: 4px 4px 0 0;
+      cursor: pointer; font-size: 13px;
+    }
+    .tab.active { color: #1677ff; border-bottom-color: #fff; background: #fff; font-weight: 600; }
+    .panel { background: #fff; border: 1px solid #e8e8e8; border-radius: 0 6px 6px 6px; padding: 16px; }
+    .item { border-bottom: 1px solid #f0f0f0; padding: 12px 0; display: grid; grid-template-columns: 1fr 280px; gap: 12px; }
+    .item:last-child { border-bottom: none; }
+    .meta .key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #666; }
+    .meta .desc { font-size: 14px; margin: 4px 0; }
+    .meta .flags { font-size: 12px; color: #888; display: flex; gap: 8px; flex-wrap: wrap; }
+    .tag { padding: 1px 6px; border-radius: 3px; background: #f5f5f5; }
+    .tag-db { background: #e6f4ff; color: #1677ff; }
+    .tag-warn { background: #fff7e6; color: #d46b08; }
+    .tag-ro { background: #fafafa; color: #999; }
+    .control input, .control select { width: 100%; padding: 6px 8px; border: 1px solid #d9d9d9; border-radius: 4px; }
+    .control .hint { font-size: 12px; color: #888; margin-top: 4px; }
+    .control .actions { margin-top: 6px; display: flex; gap: 6px; }
+    .msg { margin-bottom: 12px; padding: 8px 12px; border-radius: 4px; display: none; font-size: 13px; }
+    .msg.show { display: block; }
+    .msg.ok { background: #f6ffed; color: #389e0d; border: 1px solid #b7eb8f; }
+    .msg.err { background: #fff2f0; color: #cf1322; border: 1px solid #ffccc7; }
+    .msg.warn { background: #fffbe6; color: #d48806; border: 1px solid #ffe58f; }
+  </style>
+  <script src="../common/http.js"></script>
+</head>
+<body>
+<div class="toolbar">
+  <button class="btn" id="btnSave" onclick="saveAll()">保存当前分组</button>
+  <button class="btn btn-secondary" onclick="reload()">从库重载</button>
+  <span style="font-size:12px;color:#888">密钥项留空表示不修改；可「恢复默认」清除 DB 覆盖</span>
+</div>
+<div id="msg" class="msg"></div>
+<div class="tabs" id="tabs"></div>
+<div class="panel" id="panel"></div>
+
+<script>
+  const GROUP_LABELS = {
+    report: '上报',
+    'rate-limit': '限流',
+    auth: '鉴权',
+    'access-log': '访问日志',
+    admin: '管理端',
+    cache: '缓存'
+  };
+  const CLEAR = '__CLEAR__';
+  let groups = {};
+  let currentGroup = 'report';
+  const drafts = {}; // key -> draft value string
+
+  function showMsg(text, type) {
+    const el = document.getElementById('msg');
+    el.textContent = text;
+    el.className = 'msg show ' + (type || 'ok');
+  }
+
+  function clearMsg() {
+    const el = document.getElementById('msg');
+    el.className = 'msg';
+    el.textContent = '';
+  }
+
+  async function load() {
+    clearMsg();
+    const data = await AdminHttp.api('/admin/platform/v1/configs');
+    groups = data.groups || {};
+    const names = Object.keys(groups);
+    if (!names.includes(currentGroup) && names.length) currentGroup = names[0];
+    renderTabs();
+    renderPanel();
+  }
+
+  function renderTabs() {
+    const tabs = document.getElementById('tabs');
+    tabs.innerHTML = '';
+    Object.keys(groups).forEach(g => {
+      const a = document.createElement('button');
+      a.type = 'button';
+      a.className = 'tab' + (g === currentGroup ? ' active' : '');
+      a.textContent = GROUP_LABELS[g] || g;
+      a.onclick = () => { currentGroup = g; renderTabs(); renderPanel(); clearMsg(); };
+      tabs.appendChild(a);
+    });
+  }
+
+  function renderPanel() {
+    const items = groups[currentGroup] || [];
+    const panel = document.getElementById('panel');
+    panel.innerHTML = '';
+    if (!items.length) {
+      panel.innerHTML = '<div style="color:#999">暂无配置项</div>';
+      return;
+    }
+    items.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'item';
+      const flags = [];
+      flags.push('<span class="tag ' + (item.source === 'DB' ? 'tag-db' : '') + '">' +
+        (item.source === 'DB' ? '来自 DB' : '来自默认') + '</span>');
+      if (!item.hotReload) flags.push('<span class="tag tag-warn">需重启</span>');
+      if (!item.writable) flags.push('<span class="tag tag-ro">只读</span>');
+      if (item.secret) flags.push('<span class="tag">密钥</span>');
+
+      let controlHtml = '';
+      const draftKey = item.key;
+      const currentDraft = drafts[draftKey];
+      if (!item.writable) {
+        controlHtml = '<input disabled value="' + esc(item.value || '') + '"/>' +
+          '<div class="hint">只读展示，不可在后台修改</div>';
+      } else if (item.valueType === 'BOOL') {
+        const v = currentDraft != null ? currentDraft : (item.value || 'false');
+        controlHtml = '<select data-key="' + esc(item.key) + '">' +
+          '<option value="true"' + (v === 'true' ? ' selected' : '') + '>true</option>' +
+          '<option value="false"' + (v === 'false' ? ' selected' : '') + '>false</option></select>';
+      } else if (item.enums && item.enums.length) {
+        const v = currentDraft != null ? currentDraft : (item.value || '');
+        controlHtml = '<select data-key="' + esc(item.key) + '">' +
+          item.enums.map(e => '<option value="' + esc(e) + '"' + (v === e ? ' selected' : '') + '>' + esc(e) + '</option>').join('') +
+          '</select>';
+      } else if (item.secret) {
+        controlHtml = '<input type="password" data-key="' + esc(item.key) + '" placeholder="' +
+          (item.hasValue ? '已设置（留空不修改）' : '未设置') + '" autocomplete="new-password"/>' +
+          '<div class="hint">' + (item.hasValue ? '已设置，接口不回显明文' : '尚未设置') +
+          (item.min != null ? ' · 范围 ' + item.min + '~' + item.max : '') + '</div>';
+      } else {
+        const v = currentDraft != null ? currentDraft : (item.value || '');
+        controlHtml = '<input data-key="' + esc(item.key) + '" value="' + esc(v) + '"/>' +
+          (item.min != null ? '<div class="hint">范围 ' + item.min + ' ~ ' + item.max + '</div>' : '');
+      }
+      if (item.writable) {
+        controlHtml += '<div class="actions"><button type="button" class="btn btn-danger" data-reset="' +
+          esc(item.key) + '">恢复默认</button></div>';
+      }
+
+      row.innerHTML =
+        '<div class="meta"><div class="desc">' + esc(item.description || item.key) + '</div>' +
+        '<div class="key">' + esc(item.key) + '</div>' +
+        '<div class="flags">' + flags.join('') + '</div></div>' +
+        '<div class="control">' + controlHtml + '</div>';
+      panel.appendChild(row);
+    });
+
+    panel.querySelectorAll('input[data-key], select[data-key]').forEach(el => {
+      el.addEventListener('change', () => { drafts[el.dataset.key] = el.value; });
+      el.addEventListener('input', () => { drafts[el.dataset.key] = el.value; });
+    });
+    panel.querySelectorAll('[data-reset]').forEach(btn => {
+      btn.addEventListener('click', () => resetOne(btn.dataset.reset));
+    });
+  }
+
+  function normalizeCompare(item, v) {
+    if (item.valueType === 'BOOL') {
+      return String(v).toLowerCase() === 'true' ? 'true' : 'false';
+    }
+    return String(v == null ? '' : v);
+  }
+
+  async function saveAll() {
+    clearMsg();
+    const items = groups[currentGroup] || [];
+    const simple = [];
+    for (const item of items) {
+      if (!item.writable) continue;
+      const el = document.querySelector('[data-key="' + cssEscape(item.key) + '"]');
+      if (!el) continue;
+      const v = el.value;
+      if (item.secret) {
+        // 密钥留空=不修改；仅提交用户新输入
+        if (v && String(v).trim()) simple.push({ key: item.key, value: v });
+        continue;
+      }
+      const next = normalizeCompare(item, v);
+      const prev = normalizeCompare(item, item.value);
+      if (next === prev) continue; // 未变更不写库，避免整组误标「来自 DB」
+      simple.push({ key: item.key, value: next });
+    }
+    if (!simple.length) {
+      showMsg('没有需要保存的变更', 'warn');
+      return;
+    }
+    if (simple.some(i => i.key === 'platform.geo.auth.enabled' && i.value === 'false')) {
+      if (!confirm('关闭鉴权会使用户 API 裸奔，确认保存？')) return;
+    }
+    try {
+      document.getElementById('btnSave').disabled = true;
+      const data = await AdminHttp.api('/admin/platform/v1/configs', {
+        method: 'PUT',
+        body: JSON.stringify({ items: simple })
+      });
+      groups = data.groups || groups;
+      Object.keys(drafts).forEach(k => delete drafts[k]);
+      renderPanel();
+      let tip = '已保存并热生效';
+      if (data.needRestart && data.needRestart.length) {
+        tip += '；以下项需重启：' + data.needRestart.join(', ');
+        showMsg(tip, 'warn');
+      } else {
+        showMsg(tip, 'ok');
+      }
+    } catch (e) {
+      showMsg(e.message || '保存失败', 'err');
+    } finally {
+      document.getElementById('btnSave').disabled = false;
+    }
+  }
+
+  async function resetOne(key) {
+    if (!confirm('清除该键的 DB 覆盖，恢复 yml 默认？')) return;
+    try {
+      const data = await AdminHttp.api('/admin/platform/v1/configs/reset', {
+        method: 'POST',
+        body: JSON.stringify({ keys: [key] })
+      });
+      groups = data.groups || groups;
+      delete drafts[key];
+      renderPanel();
+      showMsg('已恢复默认：' + key, 'ok');
+    } catch (e) {
+      showMsg(e.message || '恢复失败', 'err');
+    }
+  }
+
+  async function reload() {
+    try {
+      await AdminHttp.api('/admin/platform/v1/configs/reload', { method: 'POST', body: '{}' });
+      await load();
+      showMsg('已从数据库重载', 'ok');
+    } catch (e) {
+      showMsg(e.message || '重载失败', 'err');
+    }
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function cssEscape(s) {
+    // attribute selector escape for quotes
+    return String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  }
+
+  load().catch(e => showMsg(e.message || '加载失败', 'err'));
+</script>
+</body>
+</html>

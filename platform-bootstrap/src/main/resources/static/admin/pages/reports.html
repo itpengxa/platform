@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <title>上报记录</title>
+  <style>
+    body { margin: 0; padding: 16px; font-family: sans-serif; background: #f5f7fa; }
+    .filters { background: #fff; padding: 12px; border-radius: 6px; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+    input, select { padding: 6px 8px; border: 1px solid #d9d9d9; border-radius: 4px; }
+    .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; background: #1677ff; color: #fff; }
+    table { width: 100%; background: #fff; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; font-size: 13px; text-align: left; }
+    th { background: #fafafa; }
+    .tag { padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+    .tag-green { background: #f6ffed; color: #389e0d; }
+    .tag-orange { background: #fff7e6; color: #d46b08; }
+    .tag-gray { background: #f5f5f5; color: #666; }
+  </style>
+</head>
+<body>
+<div class="filters">
+  <select id="resultStatus">
+    <option value="">全部状态</option>
+    <option value="AUTO_CREATED">自动创建</option>
+    <option value="MANUAL_CREATED">人工通过创建</option>
+    <option value="GEOCODE_FAIL">地理编码失败</option>
+    <option value="DISTANCE_REJECT">距离超限待审</option>
+    <option value="ALREADY_EXISTS">已存在</option>
+    <option value="PARENT_NO_COORD">父节点无坐标</option>
+    <option value="REJECTED">已驳回</option>
+  </select>
+  <input id="countryCode" placeholder="国家码" maxlength="2"/>
+  <input id="clientCode" placeholder="接入方"/>
+  <button class="btn" onclick="search()">搜索</button>
+</div>
+<table>
+  <thead><tr><th>ID</th><th>接入方</th><th>缺省名</th><th>父ID</th><th>状态</th><th>区划ID</th><th>距离km</th><th>时间</th><th>操作</th></tr></thead>
+  <tbody id="tbody"></tbody>
+</table>
+<div id="pager"></div>
+<script src="../common/http.js"></script>
+<script src="../common/dict.js"></script>
+<script src="../common/pager.js"></script>
+<script>
+  const pager = AdminPager.mount('pager', { pageSize: 20, onChange: () => load() });
+  function search() { pager.reset(); load(); }
+  async function load() {
+    const q = new URLSearchParams({ pageNum: pager.pageNum, pageSize: pager.pageSize });
+    const rs = document.getElementById('resultStatus').value;
+    const cc = document.getElementById('countryCode').value.trim();
+    const cl = document.getElementById('clientCode').value.trim();
+    if (rs) q.set('resultStatus', rs);
+    if (cc) q.set('countryCode', cc);
+    if (cl) q.set('clientCode', cl);
+    const data = await AdminHttp.api('/admin/geo/v1/reports/page?' + q);
+    pager.apply(data);
+    const list = data.list || [];
+    document.getElementById('tbody').innerHTML = list.length ? list.map(r => `<tr>
+      <td>${r.id}</td><td>${r.clientCode}</td><td>${r.missingName}</td><td>${r.parentId}</td>
+      <td>${AdminDict.reportStatusTag(r.resultStatus)}</td>
+      <td>${r.regionId||'-'}</td><td>${r.distanceKm == null ? '-' : r.distanceKm}</td><td>${(r.createdAt||'').replace('T',' ')}</td>
+      <td>${actionBtns(r)}</td></tr>`).join('') : '<tr><td colspan="9" style="color:#999;text-align:center">暂无数据</td></tr>';
+  }
+  function actionBtns(r) {
+    if (r.resultStatus === 'DISTANCE_REJECT' || r.resultStatus === 'PARENT_NO_COORD') {
+      return `<button class="btn" style="font-size:12px;margin-right:4px" onclick="approve(${r.id})">通过</button>
+              <button class="btn" style="font-size:12px;background:#999" onclick="reject(${r.id})">驳回</button>`;
+    }
+    return '-';
+  }
+  async function approve(id) { await AdminHttp.api('/admin/geo/v1/reports/' + id + '/approve', { method: 'POST' }); load(); }
+  async function reject(id) { await AdminHttp.api('/admin/geo/v1/reports/' + id + '/reject', { method: 'POST' }); load(); }
+  load();
+</script>
+</body>
+</html>

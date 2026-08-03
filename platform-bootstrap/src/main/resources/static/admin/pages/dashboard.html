@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <title>数据看板</title>
+  <script src="../vendor/echarts.min.js"></script>
+  <style>
+    body { margin: 0; padding: 16px; font-family: sans-serif; background: #f5f7fa; }
+    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+    .card { background: #fff; padding: 16px; border-radius: 8px; }
+    .card h4 { margin: 0 0 8px; color: #666; font-size: 13px; }
+    .card .val { font-size: 28px; color: #1677ff; font-weight: 600; }
+    .panel { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+    .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    input, select { padding: 6px 8px; border: 1px solid #d9d9d9; border-radius: 4px; }
+    .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; background: #1677ff; color: #fff; }
+    #chart { height: 320px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; text-align: left; }
+    th { background: #fafafa; }
+  </style>
+</head>
+<body>
+<div class="cards" id="kpi"></div>
+<div class="panel">
+  <div class="toolbar">
+    <input type="date" id="date"/>
+    <select id="granularity"><option value="hour" selected>按小时</option><option value="minute">按分钟</option></select>
+    <select id="clientCode" title="接入方">
+      <option value="">全部接入方</option>
+    </select>
+    <button class="btn" onclick="refresh()">刷新</button>
+  </div>
+  <div id="chart"></div>
+</div>
+<div class="panel">
+  <h3>接入方调用</h3>
+  <table><thead><tr><th>接入方</th><th>调用次数</th><th>成功次数</th></tr></thead><tbody id="clientTbl"></tbody></table>
+</div>
+<div class="panel">
+  <h3>高频区划 Top</h3>
+  <div class="toolbar">
+    <select id="hotCountry">
+      <option value="">全部国家</option>
+      <option value="VN" selected>VN 越南</option>
+    </select>
+    <select id="hotLevel"><option value="">全部层级</option><option value="1">国家</option><option value="2">省/市</option><option value="3">城市</option><option value="4">区县</option><option value="5">街镇</option></select>
+    <button class="btn" onclick="refresh()">刷新高频</button>
+  </div>
+  <table><thead><tr><th>区划ID</th><th>国家</th><th>层级</th><th>名称</th><th>次数</th></tr></thead><tbody id="hotTbl"></tbody></table>
+  <div id="hotEmpty" style="display:none;padding:16px;color:#999;font-size:13px">暂无高频区划数据。对 /regions/children、/search、/tree 产生调用后才会统计；也可执行 sql/geo_stat_backfill_region_dims.sql 回填历史。</div>
+</div>
+<script src="../common/http.js"></script>
+<script src="../common/dict.js"></script>
+<script>
+  if (typeof echarts === 'undefined') {
+    document.body.insertAdjacentHTML('afterbegin',
+      '<div style="padding:12px;background:#fff2f0;color:#cf1322;margin-bottom:12px">图表库加载失败，请检查 /admin/vendor/echarts.min.js</div>');
+  }
+  const chart = typeof echarts !== 'undefined' ? echarts.init(document.getElementById('chart')) : null;
+  document.getElementById('date').valueAsDate = new Date();
+
+  async function loadClientOptions() {
+    const sel = document.getElementById('clientCode');
+    const current = sel.value;
+    const page = await AdminHttp.api('/admin/platform/v1/clients/page?pageNum=1&pageSize=200&status=1');
+    const codes = new Set((page.list || []).map(c => c.clientCode));
+    // 补充今日已出现但不在白名单里的来源（如 anonymous）
+    try {
+      const date = document.getElementById('date').value;
+      const tq = new URLSearchParams({ granularity: 'day' });
+      if (date) tq.set('date', date);
+      const stats = await AdminHttp.api('/admin/platform/v1/stats/by-client?' + tq);
+      (stats || []).forEach(s => { if (s.clientCode) codes.add(s.clientCode); });
+    } catch (e) { /* ignore */ }
+    const sorted = Array.from(codes).sort();
+    sel.innerHTML = '<option value="">全部接入方</option>' +
+      sorted.map(code => `<option value="${code}">${code}</option>`).join('');
+    if (current && codes.has(current)) sel.value = current;
+  }
+
+  async function refresh() {
+    const date = document.getElementById('date').value;
+    const gran = document.getElementById('granularity').value;
+    const client = document.getElementById('clientCode').value;
+    const q = date ? '?date=' + date : '';
+    const overview = await AdminHttp.api('/admin/platform/v1/stats/overview' + q);
+    document.getElementById('kpi').innerHTML = `
+      <div class="card"><h4>今日调用</h4><div class="val">${overview.totalCalls}</div></div>
+      <div class="card"><h4>成功率</h4><div class="val">${overview.successRate.toFixed(1)}%</div></div>
+      <div class="card"><h4>活跃接入方</h4><div class="val">${overview.activeClients}</div></div>`;
+
+    const tq = new URLSearchParams({ granularity: gran });
+    if (date) tq.set('date', date);
+    if (client) tq.set('clientCode', client);
+    const timeline = await AdminHttp.api('/admin/platform/v1/stats/timeline?' + tq);
+    if (chart) {
+      chart.setOption({
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'category', data: timeline.map(x => x.bucket) },
+        yAxis: { type: 'value' },
+        series: [{ name: '调用', type: 'line', data: timeline.map(x => x.callCount), smooth: true, areaStyle: {} }]
+      });
+    }
+
+    const clients = await AdminHttp.api('/admin/platform/v1/stats/by-client?' + tq);
+    document.getElementById('clientTbl').innerHTML = clients.map(c =>
+      `<tr style="cursor:pointer" data-code="${String(c.clientCode||'').replace(/"/g,'&quot;')}" onclick="selectClient(this.dataset.code)"><td>${c.clientCode}</td><td>${c.callCount}</td><td>${c.successCount}</td></tr>`).join('');
+
+    const hq = new URLSearchParams({ limit: 20 });
+    if (date) hq.set('date', date);
+    const hc = document.getElementById('hotCountry').value;
+    const hl = document.getElementById('hotLevel').value;
+    if (hc) hq.set('countryCode', hc);
+    if (hl) hq.set('level', hl);
+    const hot = await AdminHttp.api('/admin/platform/v1/stats/hot-regions?' + hq);
+    const hotTbl = document.getElementById('hotTbl');
+    const hotEmpty = document.getElementById('hotEmpty');
+    if (!hot || hot.length === 0) {
+      hotTbl.innerHTML = '';
+      hotEmpty.style.display = 'block';
+    } else {
+      hotEmpty.style.display = 'none';
+      hotTbl.innerHTML = hot.map(h =>
+        `<tr><td>${h.regionId}</td><td>${h.countryCode||''}</td><td>${AdminDict.LEVEL_MAP[h.level]||h.level||''}</td>
+        <td>${h.name||'-'}</td><td>${h.callCount}</td></tr>`).join('');
+    }
+  }
+
+  function selectClient(code) {
+    const sel = document.getElementById('clientCode');
+    if (![...sel.options].some(o => o.value === code)) {
+      sel.add(new Option(code, code));
+    }
+    sel.value = code;
+    refresh();
+  }
+
+  document.getElementById('clientCode').addEventListener('change', () => refresh());
+  loadClientOptions().then(refresh);
+</script>
+</body>
+</html>

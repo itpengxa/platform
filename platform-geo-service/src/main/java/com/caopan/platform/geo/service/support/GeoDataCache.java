@@ -3,8 +3,8 @@ package com.caopan.platform.geo.service.support;
 import com.caopan.platform.common.exception.BizException;
 import com.caopan.platform.common.exception.ErrorCode;
 import com.caopan.platform.geo.cache.GeoCacheKeys;
-import com.caopan.platform.geo.cache.GeoCacheProperties;
 import com.caopan.platform.geo.cache.TieredCache;
+import com.caopan.platform.geo.config.runtime.EffectiveCacheSettings;
 import com.caopan.platform.geo.entity.GeoCountry;
 import com.caopan.platform.geo.entity.GeoRegion;
 import com.caopan.platform.geo.mapper.GeoCountryMapper;
@@ -44,7 +44,7 @@ public class GeoDataCache {
     private final GeoCountryMapper geoCountryMapper;
     private final GeoRegionMapper geoRegionMapper;
     private final TieredCache tieredCache;
-    private final GeoCacheProperties cacheProperties;
+    private final EffectiveCacheSettings cacheSettings;
 
     /**
      * 注入依赖构造。
@@ -52,16 +52,16 @@ public class GeoDataCache {
      * @param geoCountryMapper 国家 Mapper
      * @param geoRegionMapper  区划 Mapper
      * @param tieredCache      三级缓存
-     * @param cacheProperties  缓存 TTL/容量配置
+     * @param cacheSettings    缓存 TTL/容量（热生效）
      */
     public GeoDataCache(GeoCountryMapper geoCountryMapper,
                         GeoRegionMapper geoRegionMapper,
                         TieredCache tieredCache,
-                        GeoCacheProperties cacheProperties) {
+                        EffectiveCacheSettings cacheSettings) {
         this.geoCountryMapper = geoCountryMapper;
         this.geoRegionMapper = geoRegionMapper;
         this.tieredCache = tieredCache;
-        this.cacheProperties = cacheProperties;
+        this.cacheSettings = cacheSettings;
     }
 
     /**
@@ -72,7 +72,7 @@ public class GeoDataCache {
      */
     public List<GeoCountry> listCountries(String keyword) {
         String key = GeoCacheKeys.countries(keyword);
-        List<GeoCountry> list = tieredCache.get(key, COUNTRY_LIST, cacheProperties.countriesTtl(), () -> {
+        List<GeoCountry> list = tieredCache.get(key, COUNTRY_LIST, cacheSettings.countriesTtl(), () -> {
             log.info("L3 load countries, keyword={}", keyword);
             List<GeoCountry> rows = geoCountryMapper.listEnabled(keyword);
             return rows == null ? Collections.emptyList() : rows;
@@ -89,7 +89,7 @@ public class GeoDataCache {
      */
     public List<GeoRegion> listChildren(Long parentId) {
         String key = GeoCacheKeys.children(parentId);
-        List<GeoRegion> list = tieredCache.get(key, REGION_LIST, cacheProperties.childrenTtl(), () -> {
+        List<GeoRegion> list = tieredCache.get(key, REGION_LIST, cacheSettings.childrenTtl(), () -> {
             log.info("L3 load children, parentId={}", parentId);
             GeoRegion parent = geoRegionMapper.findEnabledById(parentId);
             if (parent == null) {
@@ -97,7 +97,7 @@ public class GeoDataCache {
                 tieredCache.putNegative(key);
                 throw new BizException(ErrorCode.PARENT_NOT_FOUND);
             }
-            tieredCache.put(GeoCacheKeys.region(parentId), parent, cacheProperties.regionTtl());
+            tieredCache.put(GeoCacheKeys.region(parentId), parent, cacheSettings.regionTtl());
             List<GeoRegion> children = geoRegionMapper.listByParentId(parentId);
             return children == null ? Collections.emptyList() : children;
         });
@@ -116,7 +116,7 @@ public class GeoDataCache {
      */
     public List<GeoRegion> listPathEntities(Long id) {
         String key = GeoCacheKeys.path(id);
-        List<GeoRegion> list = tieredCache.get(key, REGION_LIST, cacheProperties.pathTtl(), () -> {
+        List<GeoRegion> list = tieredCache.get(key, REGION_LIST, cacheSettings.pathTtl(), () -> {
             log.info("L3 load path entities, id={}", id);
             GeoRegion current = geoRegionMapper.findEnabledById(id);
             if (current == null) {
@@ -124,7 +124,7 @@ public class GeoDataCache {
                 tieredCache.putNegative(key);
                 throw new BizException(ErrorCode.REGION_NOT_FOUND);
             }
-            tieredCache.put(GeoCacheKeys.region(id), current, cacheProperties.regionTtl());
+            tieredCache.put(GeoCacheKeys.region(id), current, cacheSettings.regionTtl());
             List<Long> ids = PathUtil.parsePathIds(current.getPath());
             if (ids.isEmpty()) {
                 return Collections.singletonList(current);
@@ -156,11 +156,11 @@ public class GeoDataCache {
             throw new BizException(ErrorCode.PARAM_INVALID);
         }
         // 国家级根：depth 超过配置封顶，缓存键使用封顶后的值，避免同请求不同键
-        int countryMaxDepth = cacheProperties.resolvedTreeCountryMaxDepth();
+        int countryMaxDepth = cacheSettings.treeCountryMaxDepth();
         boolean countryRoot = rootId == null || rootId <= 0;
         final int effectiveDepth = (countryRoot && depthRaw > countryMaxDepth) ? countryMaxDepth : depthRaw;
         String key = GeoCacheKeys.tree(code, rootId, effectiveDepth);
-        TreeLoadResult result = tieredCache.get(key, TREE_RESULT, cacheProperties.treeTtl(), () -> {
+        TreeLoadResult result = tieredCache.get(key, TREE_RESULT, cacheSettings.treeTtl(), () -> {
             log.info("L3 load tree nodes, countryCode={}, rootId={}, depth={}", code, rootId, effectiveDepth);
             GeoRegion root;
             /*
@@ -189,12 +189,12 @@ public class GeoDataCache {
              * 仍按同一配置封顶。省/市等非国家级根可用到 depth=5。
              */
             int depthUse = effectiveDepth;
-            int countryCap = cacheProperties.resolvedTreeCountryMaxDepth();
+            int countryCap = cacheSettings.treeCountryMaxDepth();
             if (root.getLevel() != null && root.getLevel() == 1 && depthUse > countryCap) {
                 depthUse = countryCap;
             }
             // 根节点顺便暖 region 缓存，后续 path/children 可少打一次库
-            tieredCache.put(GeoCacheKeys.region(root.getId()), root, cacheProperties.regionTtl());
+            tieredCache.put(GeoCacheKeys.region(root.getId()), root, cacheSettings.regionTtl());
             /*
              * 3) 用「最大 level」表达深度，而不是递归 N 次：
              * depth=1 → 只要根；depth=3 且根为 L1 → maxLevel=3（国+省+市）
@@ -205,13 +205,13 @@ public class GeoDataCache {
              * 4) 行数硬顶（platform.geo.cache.tree-max-rows）：
              * LIMIT=maxRows 时「刚好拉满」视为可能截断，拒绝返回半棵树。
              */
-            int maxRows = cacheProperties.resolvedTreeMaxRows();
+            int maxRows = cacheSettings.treeMaxRows();
             List<GeoRegion> nodes = geoRegionMapper.listSubtree(code, root.getPath(), maxLevel, maxRows);
             if (nodes != null && nodes.size() >= maxRows) {
                 log.warn("tree result hit maxRows={}, countryCode={}, rootId={}, depth={}",
                         maxRows, code, rootId, depthUse);
                 // 短 TTL 缓存 oversized 标记，避免反复打重 SQL；错误码仍由外层抛 PARAM_INVALID
-                tieredCache.put(key, TreeLoadResult.oversized(root), cacheProperties.negativeTtl());
+                tieredCache.put(key, TreeLoadResult.oversized(root), cacheSettings.negativeTtl());
                 throw new BizException(ErrorCode.PARAM_INVALID);
             }
             return new TreeLoadResult(root, nodes == null ? List.of() : nodes, false);
@@ -310,10 +310,42 @@ public class GeoDataCache {
         if (id == null || id <= 0) {
             return null;
         }
-        return tieredCache.get(GeoCacheKeys.region(id), REGION, cacheProperties.regionTtl(), () -> {
+        return tieredCache.get(GeoCacheKeys.region(id), REGION, cacheSettings.regionTtl(), () -> {
             log.info("L3 load region, id={}", id);
             return geoRegionMapper.findEnabledById(id);
         });
+    }
+
+    /**
+     * 主数据变更后失效相关缓存键（GEO-002）。
+     *
+     * @param regionId    变更的区划 ID，可空
+     * @param parentId    父节点 ID，可空
+     * @param countryCode 国家码，可空
+     */
+    public void evictAfterMutation(Long regionId, Long parentId, String countryCode) {
+        if (regionId != null && regionId > 0) {
+            tieredCache.evict(GeoCacheKeys.region(regionId));
+            tieredCache.evict(GeoCacheKeys.path(regionId));
+        }
+        if (parentId != null && parentId > 0) {
+            tieredCache.evict(GeoCacheKeys.children(parentId));
+            tieredCache.evict(GeoCacheKeys.region(parentId));
+        }
+        tieredCache.evict(GeoCacheKeys.countries(null));
+        tieredCache.evict(GeoCacheKeys.countries(""));
+        if (StringUtils.hasText(countryCode)) {
+            String code = countryCode.trim().toUpperCase();
+            for (int depth = 1; depth <= 5; depth++) {
+                tieredCache.evict(GeoCacheKeys.tree(code, 0L, depth));
+                if (regionId != null && regionId > 0) {
+                    tieredCache.evict(GeoCacheKeys.tree(code, regionId, depth));
+                }
+                if (parentId != null && parentId > 0) {
+                    tieredCache.evict(GeoCacheKeys.tree(code, parentId, depth));
+                }
+            }
+        }
     }
 
     /**

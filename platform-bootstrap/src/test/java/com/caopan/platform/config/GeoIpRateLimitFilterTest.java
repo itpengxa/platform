@@ -1,7 +1,8 @@
 package com.caopan.platform.config;
 
-import com.caopan.platform.config.GeoRateLimitProperties;
-import com.caopan.platform.geo.cache.GeoCacheProperties;
+import com.caopan.platform.geo.config.runtime.EffectiveCacheSettings;
+import com.caopan.platform.geo.config.runtime.EffectiveConfigRegistry;
+import com.caopan.platform.geo.config.runtime.EffectiveRateLimitSettings;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,7 +18,10 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -129,12 +133,7 @@ class GeoIpRateLimitFilterTest {
     @Test
     void shouldNotFilter_whenDisabledOrNonGeo() {
         when(redisProvider.getIfAvailable()).thenReturn(null);
-        GeoCacheProperties cache = new GeoCacheProperties(
-                true, 10_000L, 10L, 24L, 24L, 24L, 24L, 12L, 0L, 30L, 20_000, 4);
-        GeoRateLimitProperties disabledRate = new GeoRateLimitProperties(
-                false, false, false, 1000L, 1000L, 2000L);
-        GeoIpRateLimitFilter disabled = new GeoIpRateLimitFilter(
-                new ObjectMapper(), messageSource, redisProvider, cache, disabledRate);
+        GeoIpRateLimitFilter disabled = newFilter(true, false, false);
         assertTrue(disabled.shouldNotFilter(geoRequest("/api/geo/v1/countries")));
 
         GeoIpRateLimitFilter enabled = newFilter(false, false);
@@ -169,16 +168,26 @@ class GeoIpRateLimitFilterTest {
     }
 
     private GeoIpRateLimitFilter newFilter(boolean redisEnabled, boolean failClosed) {
-        GeoCacheProperties cache = new GeoCacheProperties(
-                redisEnabled, 10_000L, 10L, 24L, 24L, 24L, 24L, 12L, 0L, 30L, 20_000, 4);
-        GeoRateLimitProperties rate = new GeoRateLimitProperties(
-                true, false, failClosed, 1000L, 1000L, 2000L);
+        return newFilter(redisEnabled, failClosed, true);
+    }
+
+    private GeoIpRateLimitFilter newFilter(boolean redisEnabled, boolean failClosed, boolean rateEnabled) {
+        EffectiveConfigRegistry registry = new EffectiveConfigRegistry();
+        Map<String, String> m = new HashMap<>();
+        m.put("platform.geo.cache.redis-enabled", String.valueOf(redisEnabled));
+        m.put("platform.geo.rate-limit.enabled", String.valueOf(rateEnabled));
+        m.put("platform.geo.rate-limit.trust-forwarded-headers", "false");
+        m.put("platform.geo.rate-limit.fail-closed", String.valueOf(failClosed));
+        m.put("platform.geo.rate-limit.default-interval-ms", "1000");
+        m.put("platform.geo.rate-limit.search-interval-ms", "1000");
+        m.put("platform.geo.rate-limit.tree-interval-ms", "2000");
+        registry.replaceAll(m, Set.of());
         return new GeoIpRateLimitFilter(
                 new ObjectMapper(),
                 messageSource,
                 redisProvider,
-                cache,
-                rate);
+                new EffectiveCacheSettings(registry),
+                new EffectiveRateLimitSettings(registry));
     }
 
     private static MockHttpServletRequest geoRequest(String uri) {

@@ -82,4 +82,29 @@ public interface GeoRegionMapper extends BaseMapper<GeoRegion> {
      * @return 每行含 parentId、cnt
      */
     List<Map<String, Object>> countChildrenByParentIds(@Param("parentIds") List<Long> parentIds);
+
+    GeoRegion findByIdAnyStatus(@Param("id") Long id);
+
+    long countAdminPage(@Param("countryCode") String countryCode,
+                        @Param("parentId") Long parentId,
+                        @Param("level") Integer level,
+                        @Param("keyword") String keyword,
+                        @Param("status") Integer status,
+                        @Param("source") String source);
+
+    List<GeoRegion> pageAdmin(@Param("countryCode") String countryCode,
+                              @Param("parentId") Long parentId,
+                              @Param("level") Integer level,
+                              @Param("keyword") String keyword,
+                              @Param("status") Integer status,
+                              @Param("source") String source,
+                              @Param("offset") int offset,
+                              @Param("limit") int limit);
+
+    long countSameNameUnderParent(@Param("parentId") Long parentId,
+                                  @Param("name") String name,
+                                  @Param("nameEn") String nameEn,
+                                  @Param("excludeId") Long excludeId);
+
+    Long nextIdForLevel(@Param("level") int level);
 }

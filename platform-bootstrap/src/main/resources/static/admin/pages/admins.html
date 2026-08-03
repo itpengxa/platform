@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <title>管理员</title>
+  <link rel="stylesheet" href="../common/admin.css"/>
+  <style>
+    body { margin: 0; padding: 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; color: #333; }
+    .toolbar, .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+    input, select { padding: 6px 10px; border: 1px solid #d9d9d9; border-radius: 4px; }
+    .btn { padding: 6px 14px; border-radius: 4px; border: 1px solid #1677ff; background: #1677ff; color: #fff; cursor: pointer; }
+    .btn-secondary { background: #fff; color: #1677ff; }
+    table { width: 100%; border-collapse: collapse; background: #fff; }
+    th, td { border: 1px solid #f0f0f0; padding: 8px 10px; font-size: 13px; text-align: left; }
+    th { background: #fafafa; }
+    .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); align-items: center; justify-content: center; }
+    .modal.show { display: flex; }
+    .dialog { background: #fff; padding: 20px; border-radius: 8px; width: 420px; }
+    .dialog label { display: block; margin: 8px 0 4px; font-size: 13px; color: #666; }
+    .dialog input { width: 100%; }
+  </style>
+</head>
+<body>
+  <div class="filters">
+    <input id="username" placeholder="用户名"/>
+    <select id="status"><option value="">状态</option><option value="1">启用</option><option value="0">停用</option></select>
+    <button class="btn" onclick="search()">搜索</button>
+    <button class="btn btn-secondary" onclick="reset()">重置</button>
+    <button class="btn" onclick="openCreate()">+ 新增管理员</button>
+  </div>
+  <table>
+    <thead><tr><th>ID</th><th>用户名</th><th>展示名</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  <div id="pager"></div>
+
+  <div class="modal" id="modal">
+    <div class="dialog">
+      <h3 id="modalTitle">新增管理员</h3>
+      <label>用户名</label><input id="fUser"/>
+      <label>密码（至少5位）</label><input id="fPwd" type="password"/>
+      <label>展示名</label><input id="fName"/>
+      <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+        <button class="btn" onclick="save()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="pwdModal">
+    <div class="dialog">
+      <h3>重置密码</h3>
+      <input type="hidden" id="pwdId"/>
+      <label>新密码</label><input id="pwdNew" type="password"/>
+      <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="document.getElementById('pwdModal').classList.remove('show')">取消</button>
+        <button class="btn" onclick="savePwd()">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="../common/http.js"></script>
+  <script src="../common/dict.js"></script>
+  <script src="../common/pager.js"></script>
+  <script>
+    AdminHttp.requireLogin();
+    const pager = AdminPager.mount('pager', { pageSize: 20, onChange: () => load() });
+    function search() { pager.reset(); load(); }
+    async function load() {
+      const q = new URLSearchParams({
+        pageNum: pager.pageNum, pageSize: pager.pageSize,
+        username: document.getElementById('username').value,
+        status: document.getElementById('status').value
+      });
+      ['username','status'].forEach(k => { if (!q.get(k)) q.delete(k); });
+      const data = await AdminHttp.api('/admin/platform/v1/admins/page?' + q.toString());
+      pager.apply(data);
+      const tb = document.getElementById('tbody');
+      const list = data.list || [];
+      tb.innerHTML = list.length ? list.map(r => `
+        <tr>
+          <td>${r.id}</td><td>${r.username}</td><td>${r.displayName||''}</td>
+          <td>${AdminDict.statusTag(r.status)}</td><td>${r.createdAt||''}</td>
+          <td>
+            <button class="btn btn-secondary" onclick="openPwd(${r.id})">重置密码</button>
+            <button class="btn btn-secondary" onclick="toggle(${r.id},${r.status===1?0:1})">${r.status===1?'停用':'启用'}</button>
+          </td>
+        </tr>`).join('') : '<tr><td colspan="6" style="color:#999;text-align:center">暂无数据</td></tr>';
+    }
+    function reset() {
+      document.getElementById('username').value = '';
+      document.getElementById('status').value = '';
+      search();
+    }
+    function openCreate() {
+      document.getElementById('fUser').value = '';
+      document.getElementById('fPwd').value = '';
+      document.getElementById('fName').value = '';
+      document.getElementById('modal').classList.add('show');
+    }
+    function closeModal() { document.getElementById('modal').classList.remove('show'); }
+    async function save() {
+      await AdminHttp.api('/admin/platform/v1/admins', {
+        method: 'POST',
+        body: JSON.stringify({
+          username: document.getElementById('fUser').value.trim(),
+          password: document.getElementById('fPwd').value,
+          displayName: document.getElementById('fName').value.trim() || null
+        })
+      });
+      closeModal(); load();
+    }
+    function openPwd(id) {
+      document.getElementById('pwdId').value = id;
+      document.getElementById('pwdNew').value = '';
+      document.getElementById('pwdModal').classList.add('show');
+    }
+    async function savePwd() {
+      const id = document.getElementById('pwdId').value;
+      await AdminHttp.api('/admin/platform/v1/admins/' + id + '/password', {
+        method: 'PUT',
+        body: JSON.stringify({ password: document.getElementById('pwdNew').value })
+      });
+      document.getElementById('pwdModal').classList.remove('show');
+      alert('密码已重置，原会话已失效');
+    }
+    async function toggle(id, status) {
+      await AdminHttp.api('/admin/platform/v1/admins/' + id + '/status', {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      });
+      load();
+    }
+    load();
+  </script>
+</body>
+</html>

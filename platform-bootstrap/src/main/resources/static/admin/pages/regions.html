@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <title>区划管理</title>
+  <style>
+    body { margin: 0; padding: 16px; font-family: sans-serif; background: #f5f7fa; }
+    .toolbar, .filters { background: #fff; padding: 12px; border-radius: 6px; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    input, select { padding: 6px 8px; border: 1px solid #d9d9d9; border-radius: 4px; }
+    .btn { padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; background: #1677ff; color: #fff; }
+    .btn-secondary { background: #fff; color: #333; border: 1px solid #d9d9d9; }
+    table { width: 100%; background: #fff; border-collapse: collapse; border-radius: 6px; overflow: hidden; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; text-align: left; font-size: 13px; }
+    th { background: #fafafa; }
+    .tag { padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+    .tag-green { background: #f6ffed; color: #389e0d; }
+    .tag-orange { background: #fff7e6; color: #d46b08; }
+    .tag-gray { background: #f5f5f5; color: #666; }
+    .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); align-items: center; justify-content: center; }
+    .modal.show { display: flex; }
+    .modal-box { background: #fff; padding: 20px; border-radius: 8px; width: 480px; max-height: 90vh; overflow: auto; }
+    .form-row { margin-bottom: 10px; }
+    .form-row label { display: block; margin-bottom: 4px; font-size: 13px; color: #666; }
+    .form-row input { width: 100%; }
+    .actions button { margin-right: 6px; font-size: 12px; }
+  </style>
+</head>
+<body>
+<div class="filters">
+  <input id="countryCode" placeholder="国家码 ISO2" maxlength="2"/>
+  <input id="parentId" placeholder="父节点ID" type="number"/>
+  <select id="level"><option value="">层级</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
+  <input id="keyword" placeholder="关键词"/>
+  <select id="status"><option value="">状态</option><option value="1">启用</option><option value="0">停用</option></select>
+  <select id="source">
+    <option value="">来源</option>
+    <option value="user_report">用户上报</option>
+    <option value="admin">后台新增</option>
+    <option value="OSM">OSM</option>
+    <option value="OSM_STREET">OSM街道</option>
+    <option value="GEONAMES">GeoNames</option>
+    <option value="GSO">GSO</option>
+    <option value="CSC">CSC</option>
+  </select>
+  <button class="btn" onclick="search()">搜索</button>
+  <button class="btn btn-secondary" onclick="resetFilters()">重置</button>
+  <button class="btn" onclick="openCreate()">+ 新增</button>
+</div>
+<table>
+  <thead><tr><th>ID</th><th>名称</th><th>国家</th><th>层级</th><th>父ID</th><th>来源</th><th>状态</th><th>操作</th></tr></thead>
+  <tbody id="tbody"></tbody>
+</table>
+<div id="pager"></div>
+
+<div class="modal" id="modal">
+  <div class="modal-box">
+    <h3 id="modalTitle">新增区划</h3>
+    <input type="hidden" id="editId"/>
+    <div class="form-row"><label>父节点ID *</label><input id="fParentId" type="number"/></div>
+    <div class="form-row"><label>名称 *</label><input id="fName"/></div>
+    <div class="form-row"><label>英文名</label><input id="fNameEn"/></div>
+    <div class="form-row"><label>中文名</label><input id="fNameCh"/></div>
+    <div class="form-row"><label>编码</label><input id="fCode"/></div>
+    <div class="form-row"><label>纬度</label><input id="fLat" type="number" step="any"/></div>
+    <div class="form-row"><label>经度</label><input id="fLng" type="number" step="any"/></div>
+    <div class="form-row"><label>排序</label><input id="fSort" type="number" value="0"/></div>
+    <div class="form-row"><label>状态</label><select id="fStatus"><option value="1">启用</option><option value="0">停用</option></select></div>
+    <div style="margin-top:16px;text-align:right">
+      <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+      <button class="btn" onclick="save()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script src="../common/http.js"></script>
+<script src="../common/dict.js"></script>
+<script src="../common/pager.js"></script>
+<script>
+  const rowCache = {};
+  const pager = AdminPager.mount('pager', { pageSize: 20, onChange: () => load() });
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+  function search() { pager.reset(); load(); }
+  async function load() {
+    const q = new URLSearchParams({
+      pageNum: pager.pageNum, pageSize: pager.pageSize,
+      countryCode: document.getElementById('countryCode').value.trim(),
+      keyword: document.getElementById('keyword').value.trim(),
+      parentId: document.getElementById('parentId').value,
+      level: document.getElementById('level').value,
+      status: document.getElementById('status').value,
+      source: document.getElementById('source').value
+    });
+    ['countryCode','keyword','parentId','level','status','source'].forEach(k => { if (!q.get(k)) q.delete(k); });
+    const data = await AdminHttp.api('/admin/geo/v1/regions/page?' + q);
+    pager.apply(data);
+    const tbody = document.getElementById('tbody');
+    Object.keys(rowCache).forEach(k => delete rowCache[k]);
+    const list = data.list || [];
+    tbody.innerHTML = list.length ? list.map(r => {
+      rowCache[r.id] = r;
+      return `<tr>
+      <td>${r.id}</td><td>${esc(r.name)}</td><td>${esc(r.countryCode||'')}</td>
+      <td>${AdminDict.LEVEL_MAP[r.level]||r.level}</td><td>${r.parentId||''}</td>
+      <td>${AdminDict.sourceTag(r.source)}</td>
+      <td>${AdminDict.statusTag(r.status)}</td>
+      <td class="actions">
+        <button class="btn btn-secondary" onclick="edit(${r.id})">修改</button>
+        <button class="btn btn-secondary" onclick="copyAsNew(${r.id})">复制为新增</button>
+        <button class="btn btn-secondary" onclick="toggleStatus(${r.id},${r.status===1?0:1})">${r.status===1?'停用':'启用'}</button>
+      </td></tr>`;
+    }).join('') : '<tr><td colspan="8" style="color:#999;text-align:center">暂无数据</td></tr>';
+  }
+  function resetFilters() {
+    ['countryCode','parentId','keyword'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('level').value = '';
+    document.getElementById('status').value = '';
+    document.getElementById('source').value = '';
+    search();
+  }
+  function openCreate() {
+    document.getElementById('editId').value = '';
+    document.getElementById('modalTitle').textContent = '新增区划';
+    ['fName','fNameEn','fNameCh','fCode','fLat','fLng'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('fParentId').disabled = false;
+    document.getElementById('fSort').value = '0';
+    document.getElementById('fStatus').value = '1';
+    document.getElementById('modal').classList.add('show');
+  }
+  function closeModal() { document.getElementById('modal').classList.remove('show'); }
+  function edit(id) {
+    const r = rowCache[id];
+    if (!r) return;
+    document.getElementById('editId').value = r.id;
+    document.getElementById('modalTitle').textContent = '修改区划 #' + r.id;
+    document.getElementById('fParentId').value = r.parentId || '';
+    document.getElementById('fParentId').disabled = true;
+    document.getElementById('fName').value = r.name || '';
+    document.getElementById('fNameEn').value = r.nameEn || '';
+    document.getElementById('fNameCh').value = r.nameCh || '';
+    document.getElementById('fCode').value = r.code || '';
+    document.getElementById('fLat').value = r.latitude ?? '';
+    document.getElementById('fLng').value = r.longitude ?? '';
+    document.getElementById('fSort').value = r.sort ?? 0;
+    document.getElementById('fStatus').value = r.status ?? 1;
+    document.getElementById('modal').classList.add('show');
+  }
+  function copyAsNew(id) {
+    const r = rowCache[id];
+    if (!r) return;
+    openCreate();
+    document.getElementById('fParentId').value = r.parentId || '';
+    document.getElementById('fName').value = r.name || '';
+    document.getElementById('fNameEn').value = r.nameEn || '';
+    document.getElementById('fNameCh').value = r.nameCh || '';
+    document.getElementById('fCode').value = r.code || '';
+    document.getElementById('fLat').value = r.latitude ?? '';
+    document.getElementById('fLng').value = r.longitude ?? '';
+  }
+  async function save() {
+    const id = document.getElementById('editId').value;
+    const body = {
+      name: document.getElementById('fName').value.trim(),
+      nameEn: document.getElementById('fNameEn').value.trim() || null,
+      nameCh: document.getElementById('fNameCh').value.trim() || null,
+      code: document.getElementById('fCode').value.trim() || null,
+      latitude: numOrNull('fLat'), longitude: numOrNull('fLng'),
+      sort: parseInt(document.getElementById('fSort').value, 10) || 0,
+      status: parseInt(document.getElementById('fStatus').value, 10)
+    };
+    if (id) {
+      await AdminHttp.api('/admin/geo/v1/regions/' + id, { method: 'PUT', body: JSON.stringify(body) });
+    } else {
+      body.parentId = parseInt(document.getElementById('fParentId').value, 10);
+      await AdminHttp.api('/admin/geo/v1/regions', { method: 'POST', body: JSON.stringify(body) });
+    }
+    closeModal(); load();
+  }
+  function numOrNull(id) { const v = document.getElementById(id).value; return v === '' ? null : parseFloat(v); }
+  async function toggleStatus(id, status) {
+    await AdminHttp.api('/admin/geo/v1/regions/' + id + '/status', { method: 'PATCH', body: JSON.stringify({ status }) });
+    load();
+  }
+  load();
+</script>
+</body>
+</html>

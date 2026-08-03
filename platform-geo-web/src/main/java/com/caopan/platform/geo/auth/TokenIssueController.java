@@ -4,7 +4,7 @@ import com.caopan.platform.common.api.Result;
 import com.caopan.platform.common.exception.BizException;
 import com.caopan.platform.common.exception.ErrorCode;
 import com.caopan.platform.geo.access.AccessTokenService;
-import com.caopan.platform.geo.config.GeoAuthProperties;
+import com.caopan.platform.geo.config.runtime.EffectiveAuthSettings;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,11 +27,11 @@ public class TokenIssueController {
     public static final String HEADER_ISSUE_SECRET = "X-Platform-Issue-Secret";
 
     private final AccessTokenService accessTokenService;
-    private final GeoAuthProperties authProperties;
+    private final EffectiveAuthSettings authSettings;
 
-    public TokenIssueController(AccessTokenService accessTokenService, GeoAuthProperties authProperties) {
+    public TokenIssueController(AccessTokenService accessTokenService, EffectiveAuthSettings authSettings) {
         this.accessTokenService = accessTokenService;
-        this.authProperties = authProperties;
+        this.authSettings = authSettings;
     }
 
     /**
@@ -53,7 +53,7 @@ public class TokenIssueController {
     }
 
     private void assertIssueSecret(HttpServletRequest http) {
-        String expected = authProperties.normalizedIssueSecret();
+        String expected = authSettings.normalizedIssueSecret();
         if (!StringUtils.hasText(expected)) {
             return;
         }

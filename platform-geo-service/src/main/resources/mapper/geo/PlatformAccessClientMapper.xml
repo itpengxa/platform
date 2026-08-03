@@ -4,9 +4,47 @@
 <mapper namespace="com.caopan.platform.geo.mapper.PlatformAccessClientMapper">
 
     <select id="findByCode" resultType="com.caopan.platform.geo.entity.PlatformAccessClient">
-        SELECT id, client_code, client_name, status, created_at, updated_at
+        SELECT id, client_code AS clientCode, client_name AS clientName,
+               status, allow_issue AS allowIssue, remark,
+               created_at AS createdAt, updated_at AS updatedAt
         FROM platform_access_client
         WHERE client_code = #{clientCode}
         LIMIT 1
+    </select>
+
+    <select id="countAdmin" resultType="long">
+        SELECT COUNT(1)
+        FROM platform_access_client
+        <where>
+            <if test="clientCode != null and clientCode != ''">
+                AND client_code LIKE CONCAT(#{clientCode}, '%')
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+            <if test="allowIssue != null">
+                AND allow_issue = #{allowIssue}
+            </if>
+        </where>
+    </select>
+
+    <select id="pageAdmin" resultType="com.caopan.platform.geo.entity.PlatformAccessClient">
+        SELECT id, client_code AS clientCode, client_name AS clientName,
+               status, allow_issue AS allowIssue, remark,
+               created_at AS createdAt, updated_at AS updatedAt
+        FROM platform_access_client
+        <where>
+            <if test="clientCode != null and clientCode != ''">
+                AND client_code LIKE CONCAT(#{clientCode}, '%')
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+            <if test="allowIssue != null">
+                AND allow_issue = #{allowIssue}
+            </if>
+        </where>
+        ORDER BY id DESC
+        LIMIT #{offset}, #{limit}
     </select>
 </mapper>

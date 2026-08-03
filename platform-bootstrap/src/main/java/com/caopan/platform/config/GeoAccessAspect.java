@@ -6,8 +6,8 @@ import com.caopan.platform.common.exception.BizException;
 import com.caopan.platform.common.exception.ErrorCode;
 import com.caopan.platform.geo.access.AccessTokenService;
 import com.caopan.platform.geo.access.ApiAccessStatRecorder;
-import com.caopan.platform.geo.config.GeoAccessLogProperties;
-import com.caopan.platform.geo.config.GeoAuthProperties;
+import com.caopan.platform.geo.config.runtime.EffectiveAccessLogSettings;
+import com.caopan.platform.geo.config.runtime.EffectiveAuthSettings;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -41,20 +41,20 @@ public class GeoAccessAspect {
     private final AccessTokenService accessTokenService;
     private final ApiAccessStatRecorder statRecorder;
     private final ObjectMapper objectMapper;
-    private final GeoAuthProperties authProperties;
-    private final GeoAccessLogProperties accessLogProperties;
+    private final EffectiveAuthSettings authSettings;
+    private final EffectiveAccessLogSettings accessLogSettings;
 
     public GeoAccessAspect(
             AccessTokenService accessTokenService,
             ApiAccessStatRecorder statRecorder,
             ObjectMapper objectMapper,
-            GeoAuthProperties authProperties,
-            GeoAccessLogProperties accessLogProperties) {
+            EffectiveAuthSettings authSettings,
+            EffectiveAccessLogSettings accessLogSettings) {
         this.accessTokenService = accessTokenService;
         this.statRecorder = statRecorder;
         this.objectMapper = objectMapper;
-        this.authProperties = authProperties;
-        this.accessLogProperties = accessLogProperties;
+        this.authSettings = authSettings;
+        this.accessLogSettings = accessLogSettings;
     }
 
     @Around("within(com.caopan.platform.geo.controller..*) && @within(org.springframework.web.bind.annotation.RestController)")
@@ -69,7 +69,7 @@ public class GeoAccessAspect {
         Throwable error = null;
 
         try {
-            caller = authProperties.enabled()
+            caller = authSettings.enabled()
                     ? accessTokenService.parse(resolveToken(request))
                     : CallerContext.anonymous();
             CallerContextHolder.set(caller);
@@ -79,7 +79,7 @@ public class GeoAccessAspect {
         } catch (Throwable t) {
             error = t;
             success = false;
-            if (accessLogProperties.exceptionEnabled()) {
+            if (accessLogSettings.exceptionEnabled()) {
                 final CallerContext c = caller;
                 final String api = apiKey;
                 Thread.startVirtualThread(() -> logException(c, api, t));
@@ -94,7 +94,7 @@ public class GeoAccessAspect {
             final String params = paramsSnapshot;
             final String api = apiKey;
             final LocalDateTime at = calledAt;
-            final boolean argsEnabled = accessLogProperties.argsEnabled();
+            final boolean argsEnabled = accessLogSettings.argsEnabled();
             Thread.startVirtualThread(() -> {
                 if (argsEnabled) {
                     log.info("geo api args, client={}, api={}, params={}", c.clientCode(), api, params);
@@ -124,7 +124,7 @@ public class GeoAccessAspect {
     }
 
     private String buildParamsSnapshot(ProceedingJoinPoint pjp) {
-        int maxLen = accessLogProperties.resolvedParamsMaxLength();
+        int maxLen = accessLogSettings.paramsMaxLength();
         try {
             Object[] args = pjp.getArgs();
             MethodSignature sig = (MethodSignature) pjp.getSignature();

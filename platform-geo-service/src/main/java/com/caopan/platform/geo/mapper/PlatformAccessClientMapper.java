@@ -19,4 +19,14 @@ public interface PlatformAccessClientMapper extends BaseMapper<PlatformAccessCli
      * @return 接入方实体，不存在则 null
      */
     PlatformAccessClient findByCode(@Param("clientCode") String clientCode);
+
+    long countAdmin(@Param("clientCode") String clientCode,
+                    @Param("status") Integer status,
+                    @Param("allowIssue") Integer allowIssue);
+
+    java.util.List<PlatformAccessClient> pageAdmin(@Param("clientCode") String clientCode,
+                                                   @Param("status") Integer status,
+                                                   @Param("allowIssue") Integer allowIssue,
+                                                   @Param("offset") int offset,
+                                                   @Param("limit") int limit);
 }

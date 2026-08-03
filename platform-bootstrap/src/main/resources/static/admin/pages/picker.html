@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+  <title>选择器预览</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #f5f5f5; }
+    .toolbar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 10px 12px; background: #fff; border-bottom: 1px solid #e8e8e8; font-size: 13px;
+    }
+    .toolbar label { color: #666; display: flex; align-items: center; gap: 6px; }
+    .toolbar input, .toolbar select {
+      padding: 4px 8px; border: 1px solid #d9d9d9; border-radius: 4px;
+    }
+    .toolbar button {
+      padding: 4px 12px; border: none; border-radius: 4px; background: #1677ff; color: #fff; cursor: pointer;
+    }
+    .toolbar a { color: #1677ff; text-decoration: none; font-size: 12px; }
+    .toolbar .ver { margin-left: auto; color: #999; font-size: 12px; }
+    .layout { display: flex; height: calc(100% - 45px); }
+    iframe { flex: 1; min-width: 0; border: 0; display: block; background: #eee; }
+    .result-panel {
+      width: 360px; max-width: 42vw; border-left: 1px solid #e8e8e8; background: #fff;
+      display: flex; flex-direction: column; min-width: 280px;
+    }
+    .result-panel .hd {
+      padding: 10px 12px; border-bottom: 1px solid #f0f0f0; font-size: 13px; color: #333;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .result-panel .hd button {
+      margin-left: auto; padding: 4px 10px; border: 1px solid #d9d9d9; border-radius: 4px;
+      background: #fff; cursor: pointer; font-size: 12px;
+    }
+    .result-panel pre {
+      margin: 0; padding: 12px; flex: 1; overflow: auto; font-size: 12px; line-height: 1.5;
+      white-space: pre-wrap; word-break: break-all; color: #333;
+    }
+    .result-panel .empty { padding: 24px 12px; color: #999; font-size: 13px; }
+  </style>
+</head>
+<body>
+<div class="toolbar">
+  <label>clientCode <input id="clientCode" value="demo" size="10"/></label>
+  <label>lang
+    <select id="lang"><option value="en">en</option><option value="zh">zh</option></select>
+  </label>
+  <button type="button" onclick="reloadPicker()">刷新预览</button>
+  <a id="openTab" href="#" target="_blank" rel="noopener">新窗口打开</a>
+  <span class="ver">脚本 geo-picker-1.1.4.js · 末级点击后出详情可复制</span>
+</div>
+<div class="layout">
+  <iframe id="frame" title="GEO 选择器"></iframe>
+  <aside class="result-panel">
+    <div class="hd">
+      <span>选中结果 JSON</span>
+      <button type="button" id="copyResult" disabled>复制</button>
+    </div>
+    <div class="empty" id="resultEmpty">到达末级并点击地址后，这里会显示可复制的详情 JSON。</div>
+    <pre id="resultPre" style="display:none"></pre>
+  </aside>
+</div>
+<script>
+  let lastJson = '';
+  function buildUrl() {
+    const code = document.getElementById('clientCode').value.trim() || 'demo';
+    const lang = document.getElementById('lang').value;
+    const q = new URLSearchParams({
+      clientCode: code,
+      clientName: code,
+      lang: lang,
+      embed: '1',
+      autoClose: '0',
+      _v: '1.1.4-' + Date.now()
+    });
+    return '/api/geo-picker.html?' + q.toString();
+  }
+  function reloadPicker() {
+    const url = buildUrl();
+    document.getElementById('frame').src = url;
+    document.getElementById('openTab').href = url;
+    document.getElementById('resultEmpty').style.display = '';
+    document.getElementById('resultPre').style.display = 'none';
+    document.getElementById('copyResult').disabled = true;
+    lastJson = '';
+  }
+  window.addEventListener('message', function (ev) {
+    const msg = ev.data;
+    if (!msg || msg.source !== 'platform-geo-picker' || msg.event !== 'confirm') return;
+    const detail = (msg.data && (msg.data.detailJson || msg.data.detail)) || msg.data;
+    lastJson = JSON.stringify(detail, null, 2);
+    document.getElementById('resultEmpty').style.display = 'none';
+    const pre = document.getElementById('resultPre');
+    pre.style.display = 'block';
+    pre.textContent = lastJson;
+    document.getElementById('copyResult').disabled = false;
+  });
+  document.getElementById('copyResult').addEventListener('click', async function () {
+    if (!lastJson) return;
+    try {
+      await navigator.clipboard.writeText(lastJson);
+      this.textContent = '已复制';
+      const btn = this;
+      setTimeout(function () { btn.textContent = '复制'; }, 1500);
+    } catch (e) {
+      alert('复制失败，请手动选择右侧文本');
+    }
+  });
+  reloadPicker();
+</script>
+</body>
+</html>

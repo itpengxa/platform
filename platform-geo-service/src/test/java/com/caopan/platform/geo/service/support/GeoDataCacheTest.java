@@ -2,8 +2,9 @@ package com.caopan.platform.geo.service.support;
 
 import com.caopan.platform.common.exception.BizException;
 import com.caopan.platform.common.exception.ErrorCode;
-import com.caopan.platform.geo.cache.GeoCacheProperties;
 import com.caopan.platform.geo.cache.TieredCache;
+import com.caopan.platform.geo.config.runtime.EffectiveCacheSettings;
+import com.caopan.platform.geo.config.runtime.EffectiveConfigRegistry;
 import com.caopan.platform.geo.entity.GeoRegion;
 import com.caopan.platform.geo.mapper.GeoCountryMapper;
 import com.caopan.platform.geo.mapper.GeoRegionMapper;
@@ -17,7 +18,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Duration;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -47,9 +51,21 @@ class GeoDataCacheTest {
                 new ObjectMapper(),
                 false,
                 Duration.ofSeconds(30));
-        GeoCacheProperties props = new GeoCacheProperties(
-                true, 10_000L, 10L, 24L, 24L, 24L, 24L, 12L, 0L, 30L, 100, 4);
-        geoDataCache = new GeoDataCache(geoCountryMapper, geoRegionMapper, tieredCache, props);
+        EffectiveConfigRegistry registry = new EffectiveConfigRegistry();
+        Map<String, String> m = new HashMap<>();
+        m.put("platform.geo.cache.redis-enabled", "true");
+        m.put("platform.geo.cache.jitter-seconds", "0");
+        m.put("platform.geo.cache.negative-ttl-seconds", "30");
+        m.put("platform.geo.cache.tree-max-rows", "100");
+        m.put("platform.geo.cache.tree-country-max-depth", "4");
+        m.put("platform.geo.cache.countries-ttl-hours", "24");
+        m.put("platform.geo.cache.children-ttl-hours", "24");
+        m.put("platform.geo.cache.path-ttl-hours", "24");
+        m.put("platform.geo.cache.region-ttl-hours", "24");
+        m.put("platform.geo.cache.tree-ttl-hours", "12");
+        registry.replaceAll(m, Set.of());
+        geoDataCache = new GeoDataCache(
+                geoCountryMapper, geoRegionMapper, tieredCache, new EffectiveCacheSettings(registry));
     }
 
     @Test
