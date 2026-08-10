@@ -95,6 +95,10 @@
       source: document.getElementById('source').value
     });
     ['countryCode','keyword','parentId','level','status','source'].forEach(k => { if (!q.get(k)) q.delete(k); });
+    // 无任何筛选时默认只查国家层（L1），避免 324 万行全表 count 卡死
+    if (!q.has('countryCode') && !q.has('keyword') && !q.has('parentId') && !q.has('level') && !q.has('status') && !q.has('source')) {
+      q.set('level', '1');
+    }
     const data = await AdminHttp.api('/admin/geo/v1/regions/page?' + q);
     pager.apply(data);
     const tbody = document.getElementById('tbody');

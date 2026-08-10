@@ -7,7 +7,7 @@
 
   const MAX_LEVEL = 5;
   const STYLE_ID = 'platform-geo-picker-style';
-  const PICKER_VERSION = '1.1.6';
+  const PICKER_VERSION = '1.1.7';
 
   const REPORT_PASS = {
     AUTO_CREATED: true,
@@ -94,7 +94,9 @@
       .replace(/"/g, '&quot;');
   }
 
-  async function ensureToken(apiBase, clientCode, clientName, issueSecret) {
+  async function ensureToken(apiBase, clientCode, clientName, issueSecret, externalToken) {
+    // 外部注入 token 优先（管理端代签/宿主传入），不自动签发
+    if (externalToken) return externalToken;
     const key = tokenStorageKey(clientCode);
     try {
       const cached = sessionStorage.getItem(key);
@@ -124,7 +126,7 @@
     return token;
   }
 
-  function createApi(apiBase, token, lang) {
+  function createApi(apiBase, token, lang, onTokenInvalid) {
     async function request(path, options) {
       options = options || {};
       const sep = path.indexOf('?') >= 0 ? '&' : '?';
@@ -134,11 +136,34 @@
         options.headers || {}
       );
       const res = await fetch(url, Object.assign({}, options, { headers: headers }));
-      const json = await res.json();
-      if (!res.ok || (json.code !== undefined && json.code !== 0)) {
-        throw new Error(json.message || 'HTTP ' + res.status);
+      let json = null;
+      try {
+        json = await res.json();
+      } catch (e) { /* 非 JSON 响应 */ }
+      // Token 失效（401 / 40101）：清缓存并通知宿主（宿主可重新代签后刷新），SDK 侧自动重签一次重试
+      if (res.status === 401 || (json && json.code === 40101)) {
+        try { sessionStorage.removeItem(tokenStorageKey(options.__clientCode || '')); } catch (e) {}
+        if (typeof onTokenInvalid === 'function') {
+          const newToken = await onTokenInvalid();
+          if (newToken) {
+            token = newToken;
+            const retryRes = await fetch(url, Object.assign({}, options, {
+              headers: Object.assign(headers, { 'X-Platform-Token': newToken })
+            }));
+            let retryJson = null;
+            try { retryJson = await retryRes.json(); } catch (e) {}
+            if (!retryRes.ok || (retryJson && retryJson.code !== undefined && retryJson.code !== 0)) {
+              throw new Error((retryJson && retryJson.message) || 'HTTP ' + retryRes.status);
+            }
+            return retryJson && retryJson.data !== undefined ? retryJson.data : retryJson;
+          }
+        }
+        throw new Error((json && json.message) || 'HTTP ' + res.status);
       }
-      return json.data !== undefined ? json.data : json;
+      if (!res.ok || (json && json.code !== undefined && json.code !== 0)) {
+        throw new Error((json && json.message) || 'HTTP ' + res.status);
+      }
+      return json && json.data !== undefined ? json.data : json;
     }
     return {
       countries: function () { return request('/api/geo/v1/countries'); },
@@ -254,6 +279,7 @@
     const apiBase = (config.apiBase != null ? config.apiBase : '').replace(/\/$/, '');
     const primary = config.primaryColor || '#e1251b';
     const issueSecret = config.issueSecret || '';
+    const externalToken = config.token || '';
 
     injectStyles();
 
@@ -617,8 +643,25 @@
       renderTabs();
       updateReportBar();
       try {
-        const token = await ensureToken(apiBase, clientCode, clientName, issueSecret);
-        api = createApi(apiBase, token, lang);
+        // 外部注入 token 优先；失效时：有 issueSecret 则自动重签，否则通知宿主重新代签
+        const onTokenInvalid = async function () {
+          try { sessionStorage.removeItem(tokenStorageKey(clientCode)); } catch (e) {}
+          if (issueSecret) {
+            try {
+              const fresh = await ensureToken(apiBase, clientCode, clientName, issueSecret, null);
+              try { sessionStorage.setItem(tokenStorageKey(clientCode), fresh); } catch (e) {}
+              postToParent('token-invalid', { auto: true, refreshed: true });
+              return fresh;
+            } catch (e) {
+              postToParent('token-invalid', { auto: false, message: e.message || String(e) });
+              return null;
+            }
+          }
+          postToParent('token-invalid', { auto: false, message: 'Token 已失效，请宿主重新代签' });
+          return null;
+        };
+        const token = await ensureToken(apiBase, clientCode, clientName, issueSecret, externalToken);
+        api = createApi(apiBase, token, lang, onTokenInvalid);
         setStatus(clientCode + ' · v' + PICKER_VERSION);
         await renderList();
       } catch (e) {

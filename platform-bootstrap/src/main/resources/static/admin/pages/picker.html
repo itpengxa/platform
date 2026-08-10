@@ -17,8 +17,17 @@
     .toolbar button {
       padding: 4px 12px; border: none; border-radius: 4px; background: #1677ff; color: #fff; cursor: pointer;
     }
+    .toolbar button.refresh-token { background: #e1251b; }
+    .toolbar button:disabled { opacity: .5; cursor: not-allowed; }
     .toolbar a { color: #1677ff; text-decoration: none; font-size: 12px; }
     .toolbar .ver { margin-left: auto; color: #999; font-size: 12px; }
+    .token-status {
+      font-size: 12px; color: #389e0d; background: #f6ffed; border: 1px solid #b7eb8f;
+      border-radius: 4px; padding: 3px 8px; cursor: pointer; max-width: 260px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .token-status.fail { color: #cf1322; background: #fff2f0; border-color: #ffccc7; }
+    .token-status.loading { color: #666; background: #f5f5f5; border-color: #d9d9d9; }
     .layout { display: flex; height: calc(100% - 45px); }
     iframe { flex: 1; min-width: 0; border: 0; display: block; background: #eee; }
     .result-panel {
@@ -47,8 +56,10 @@
     <select id="lang"><option value="en">en</option><option value="zh">zh</option></select>
   </label>
   <button type="button" onclick="reloadPicker()">刷新预览</button>
+  <button type="button" class="refresh-token" id="btnRefreshToken" onclick="refreshToken()">🔄 刷新 Token</button>
+  <span class="token-status loading" id="tokenStatus" title="点击复制完整 Token" onclick="copyToken()">正在代签 Token…</span>
   <a id="openTab" href="#" target="_blank" rel="noopener">新窗口打开</a>
-  <span class="ver">脚本 geo-picker-1.1.6.js · 末级结果见右侧</span>
+  <span class="ver">脚本 geo-picker-1.1.7.js · 末级结果见右侧</span>
 </div>
 <div class="layout">
   <iframe id="frame" title="GEO 选择器"></iframe>
@@ -61,8 +72,39 @@
     <pre id="resultPre" style="display:none"></pre>
   </aside>
 </div>
+<script src="../common/http.js"></script>
 <script>
   let lastJson = '';
+  let currentToken = '';
+
+  // 管理端代签 Token（走 admin 会话，不依赖 issue-secret；每次签发会吊销旧值换新）
+  async function fetchToken(code, name) {
+    const data = await AdminHttp.api('/admin/platform/v1/tokens/issue', {
+      method: 'POST',
+      body: JSON.stringify({ clientCode: code, clientName: name || code })
+    });
+    return data && data.token ? data.token : '';
+  }
+
+  function tokenStatusEl() {
+    return document.getElementById('tokenStatus');
+  }
+
+  function setTokenStatus(text, cls, full) {
+    const el = tokenStatusEl();
+    el.textContent = text;
+    el.className = 'token-status' + (cls ? ' ' + cls : '');
+    el.title = full || (text + '\n点击复制完整 Token');
+  }
+
+  function cacheToken(code, token) {
+    try { sessionStorage.setItem('platform_geo_token_' + code, token); } catch (e) {}
+  }
+
+  function cachedToken(code) {
+    try { return sessionStorage.getItem('platform_geo_token_' + code) || ''; } catch (e) { return ''; }
+  }
+
   function buildUrl() {
     const code = document.getElementById('clientCode').value.trim() || 'demo';
     const lang = document.getElementById('lang').value;
@@ -72,11 +114,43 @@
       lang: lang,
       embed: '1',
       autoClose: '0',
-      _v: '1.1.6-' + Date.now()
+      _v: '1.1.7-' + Date.now()
     });
+    // 注入当前有效 token，SDK 优先使用，不再走弱密钥自动签发
+    if (currentToken) q.set('token', currentToken);
     return '/api/geo-picker.html?' + q.toString();
   }
-  function reloadPicker() {
+
+  // 确保有 token：缓存有效则用缓存，否则代签。force=true 强制重新代签
+  async function ensureToken(force) {
+    const code = document.getElementById('clientCode').value.trim() || 'demo';
+    const name = document.getElementById('clientName') ? document.getElementById('clientName').value.trim() : code;
+    if (!force) {
+      const cached = cachedToken(code);
+      if (cached) {
+        currentToken = cached;
+        setTokenStatus('token: ' + cached.slice(0, 12) + '…（缓存）', '', cached);
+        return cached;
+      }
+    }
+    setTokenStatus('正在代签 Token…', 'loading');
+    try {
+      const token = await fetchToken(code, name);
+      if (!token) throw new Error('代签响应无 token');
+      currentToken = token;
+      cacheToken(code, token);
+      setTokenStatus('token: ' + token.slice(0, 12) + '…（已代签）', '', token);
+      return token;
+    } catch (e) {
+      currentToken = '';
+      setTokenStatus('代签失败: ' + (e.message || String(e)), 'fail');
+      return '';
+    }
+  }
+
+  async function reloadPicker() {
+    // 无 token 时自动代签，保证页面不因缺 token 失效
+    if (!currentToken) await ensureToken(false);
     const url = buildUrl();
     document.getElementById('frame').src = url;
     document.getElementById('openTab').href = url;
@@ -85,17 +159,56 @@
     document.getElementById('copyResult').disabled = true;
     lastJson = '';
   }
-  window.addEventListener('message', function (ev) {
+
+  async function refreshToken() {
+    const btn = document.getElementById('btnRefreshToken');
+    btn.disabled = true;
+    try {
+      await ensureToken(true);   // 强制重新代签
+      const url = buildUrl();
+      document.getElementById('frame').src = url;
+      document.getElementById('openTab').href = url;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function copyToken() {
+    if (!currentToken) { alert('当前无有效 Token'); return; }
+    try {
+      navigator.clipboard.writeText(currentToken).then(function () {
+        const el = tokenStatusEl();
+        el.textContent = '已复制完整 Token';
+        setTimeout(function () { el.textContent = 'token: ' + currentToken.slice(0, 12) + '…（已代签）'; }, 1500);
+      });
+    } catch (e) {
+      alert(currentToken);
+    }
+  }
+
+  // 接收 iframe 内 SDK 消息：confirm=选中结果；token-invalid=Token 失效需恢复
+  window.addEventListener('message', async function (ev) {
     const msg = ev.data;
-    if (!msg || msg.source !== 'platform-geo-picker' || msg.event !== 'confirm') return;
-    const detail = (msg.data && (msg.data.detailJson || msg.data.detail)) || msg.data;
-    lastJson = JSON.stringify(detail, null, 2);
-    document.getElementById('resultEmpty').style.display = 'none';
-    const pre = document.getElementById('resultPre');
-    pre.style.display = 'block';
-    pre.textContent = lastJson;
-    document.getElementById('copyResult').disabled = false;
+    if (!msg || msg.source !== 'platform-geo-picker') return;
+    if (msg.event === 'confirm') {
+      const detail = (msg.data && (msg.data.detailJson || msg.data.detail)) || msg.data;
+      lastJson = JSON.stringify(detail, null, 2);
+      document.getElementById('resultEmpty').style.display = 'none';
+      const pre = document.getElementById('resultPre');
+      pre.style.display = 'block';
+      pre.textContent = lastJson;
+      document.getElementById('copyResult').disabled = false;
+    } else if (msg.event === 'token-invalid') {
+      // Token 被吊销/失效：自动重新代签并刷新，页面不因 token 失效而卡死
+      console.warn('[picker] token invalid, re-issuing…', msg.data);
+      setTokenStatus('Token 失效，自动重新代签…', 'loading');
+      await ensureToken(true);
+      const url = buildUrl();
+      document.getElementById('frame').src = url;
+      document.getElementById('openTab').href = url;
+    }
   });
+
   document.getElementById('copyResult').addEventListener('click', async function () {
     if (!lastJson) return;
     try {
@@ -107,7 +220,17 @@
       alert('复制失败，请手动选择右侧文本');
     }
   });
-  reloadPicker();
+
+  document.getElementById('clientCode').addEventListener('change', function () {
+    currentToken = '';          // 切换 clientCode 后旧 token 不再适用，重新代签
+    reloadPicker();
+  });
+
+  // 启动：先代签再加载
+  (async function () {
+    await ensureToken(false);
+    reloadPicker();
+  })();
 </script>
 </body>
 </html>

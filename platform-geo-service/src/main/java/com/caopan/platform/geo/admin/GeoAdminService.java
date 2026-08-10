@@ -47,9 +47,17 @@ public class GeoAdminService {
         String cc = normalizeCountry(countryCode);
         String kw = normalizeKeyword(keyword);
         String src = StringUtils.hasText(source) ? source.trim() : null;
+        // 深分页保护：无筛选条件时限制最大可跳 offset，避免 300 万行全表 filesort/count 卡死
+        boolean noFilter = !StringUtils.hasText(cc) && parentId == null && level == null
+                && !StringUtils.hasText(kw) && status == null && !StringUtils.hasText(src);
         long total = geoRegionMapper.countAdminPage(cc, parentId, level, kw, status, src);
+        int offset = (pn - 1) * ps;
+        if (noFilter && offset > 20000) {
+            pn = 20000 / ps + 1;
+            offset = (pn - 1) * ps;
+        }
         List<GeoRegion> rows = geoRegionMapper.pageAdmin(cc, parentId, level, kw, status, src,
-                (pn - 1) * ps, ps);
+                offset, ps);
         return PageResult.of(total, pn, ps, rows.stream().map(this::toVo).toList());
     }
 
