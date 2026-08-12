@@ -1,6 +1,5 @@
 package com.caopan.platform.geo.report;
 
-import com.caopan.platform.api.vo.ReverseGeocodeVO;
 import com.caopan.platform.geo.entity.GeoRegion;
 import org.springframework.util.StringUtils;
 
@@ -216,8 +215,8 @@ public final class StreetUpwardMatcher {
         return code.trim().toUpperCase(Locale.ROOT);
     }
 
-    public static ReverseGeocodeVO.NormalizedAddress normalize(Map<String, String> address) {
-        ReverseGeocodeVO.NormalizedAddress n = new ReverseGeocodeVO.NormalizedAddress();
+    public static NormalizedAddress normalize(Map<String, String> address) {
+        NormalizedAddress n = new NormalizedAddress();
         if (address == null) {
             return n;
         }
@@ -233,6 +232,41 @@ public final class StreetUpwardMatcher {
         n.setHouseNumber(first(address, "house_number"));
         n.setPostcode(first(address, "postcode", "postal_code"));
         return n;
+    }
+
+    /** 归一化地址（内部使用，不对外暴露）。 */
+    public static class NormalizedAddress {
+        private String country;
+        private String countryCode;
+        private String state;
+        private String city;
+        private String district;
+        private String suburb;
+        private String county;
+        private String street;
+        private String houseNumber;
+        private String postcode;
+
+        public String getCountry() { return country; }
+        public void setCountry(String country) { this.country = country; }
+        public String getCountryCode() { return countryCode; }
+        public void setCountryCode(String countryCode) { this.countryCode = countryCode; }
+        public String getState() { return state; }
+        public void setState(String state) { this.state = state; }
+        public String getCity() { return city; }
+        public void setCity(String city) { this.city = city; }
+        public String getDistrict() { return district; }
+        public void setDistrict(String district) { this.district = district; }
+        public String getSuburb() { return suburb; }
+        public void setSuburb(String suburb) { this.suburb = suburb; }
+        public String getCounty() { return county; }
+        public void setCounty(String county) { this.county = county; }
+        public String getStreet() { return street; }
+        public void setStreet(String street) { this.street = street; }
+        public String getHouseNumber() { return houseNumber; }
+        public void setHouseNumber(String houseNumber) { this.houseNumber = houseNumber; }
+        public String getPostcode() { return postcode; }
+        public void setPostcode(String postcode) { this.postcode = postcode; }
     }
 
     private static String first(Map<String, String> address, String... keys) {

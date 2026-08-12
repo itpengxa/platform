@@ -18,6 +18,16 @@
         <java.version>1.8</java.version>
     </properties>
 
+    <dependencies>
+        <!-- VO 序列化字段名（如 display_name）；运行期由 Spring Boot 提供实现 -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+            <version>${jackson.version}</version>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+
     <build>
         <plugins>
             <plugin>

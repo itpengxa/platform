@@ -12,8 +12,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 经纬度反查详细地址（用户侧 Token 鉴权）。
- * <p>优先本库 {@code geo_region} 坐标近邻（街道级向上）；无坐标覆盖时回退 Nominatim 名匹配。
- * 调用方应以 {@code match.path} 为准。</p>
+ * <p>优先本库 {@code geo_region} 坐标近邻；无覆盖时回退 Nominatim。
+ * 响应为 Nominatim 风格精简结构（display_name / address / …）。</p>
  */
 @RestController
 @RequestMapping("/api/geo/v1/geocode")

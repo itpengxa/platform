@@ -31,6 +31,16 @@ header h1{font-size:15px;font-weight:600;color:#f0f6fc;white-space:nowrap}
 .cascade-select select:focus{border-color:#58a6ff}
 .cascade-select select:disabled{opacity:.4;cursor:not-allowed}
 
+/* Reverse geocode */
+.reverse-box{margin:10px 8px;padding:10px;border:1px solid #30363d;border-radius:6px;background:#161b22;flex-shrink:0}
+.reverse-box .title{font-size:11px;color:#58a6ff;font-weight:600;margin-bottom:8px;letter-spacing:.3px}
+.reverse-box .row{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.reverse-box label{width:36px;font-size:10px;color:#8b949e;flex-shrink:0}
+.reverse-box input{flex:1;padding:5px 6px;background:#21262d;border:1px solid #30363d;border-radius:3px;color:#c9d1d9;font-size:11px;outline:none}
+.reverse-box input:focus{border-color:#58a6ff}
+.reverse-box button{width:100%;margin-top:4px;padding:6px 8px;background:#1f6feb;border:none;border-radius:3px;color:#fff;font-size:11px;cursor:pointer}
+.reverse-box button:hover{background:#388bfd}
+
 /* Tree */
 .tree-row{display:flex;align-items:center;gap:3px;padding:2px 4px;border-radius:3px;cursor:pointer}
 .tree-row:hover{background:#1f2d3d}
@@ -210,7 +220,14 @@ async function init(){
 }
 
 function buildCascadeHTML(){
-  let h='<div class="cascade-select" style="padding-top:8px">';
+  let h=`<div class="reverse-box" style="margin:8px 0 4px">
+    <div class="title">经纬度查询</div>
+    <div class="row"><label>经度</label><input id="revLon" type="text" placeholder="105.3521674" value="105.3521674"/></div>
+    <div class="row"><label>纬度</label><input id="revLat" type="text" placeholder="20.7815783" value="20.7815783"/></div>
+    <div class="row"><label>国家</label><input id="revCc" type="text" placeholder="可选 ISO2，如 VN" maxlength="2"/></div>
+    <button type="button" onclick="reverseGeocode()">查询 /geocode/reverse</button>
+  </div>
+  <div class="cascade-select" style="padding-top:4px">`;
   for(let i=0;i<5;i++){
     const ph=i===0?'加载中...':'请先选择上一级';
     h+=`<label style="color:${['#58a6ff','#3fb950','#d29922','#db6d28','#f85149'][i]}">${LEVEL_NAMES[i]||'L'+(i+1)}</label>
@@ -353,6 +370,33 @@ async function cascadeSearch(){
     rd.innerHTML='<div class="sr" style="color:#f85149">'+e.message+'</div>';
     showJson({error:e.message},reqTitle);
     showMeta('❌ '+e.message,true);
+  }
+}
+
+async function reverseGeocode(){
+  const lat=(document.getElementById('revLat').value||'').trim();
+  const lon=(document.getElementById('revLon').value||'').trim();
+  const cc=(document.getElementById('revCc').value||'').trim().toUpperCase();
+  if(!lat||!lon){showMeta('请填写经度、纬度',true);return;}
+  const q=new URLSearchParams({lat,lon});
+  if(cc)q.set('countryCode',cc);
+  const lang=getLang();
+  if(lang)q.set('lang',lang);
+  const reqTitle='GET /api/geo/v1/geocode/reverse?'+q.toString();
+  showMeta('反查中…');
+  try{
+    const r=await fetch(getBase()+'/api/geo/v1/geocode/reverse?'+q.toString(),{headers:authHeaders()});
+    const d=await r.json();
+    if(!r.ok||(d.code!==undefined&&d.code!==0)){
+      throw new Error(d.message||('HTTP '+r.status));
+    }
+    showJson(d.data,reqTitle);
+    showMeta('📍 reverse → '+(d.data&&d.data.display_name?d.data.display_name:(d.data&&d.data.name)||'OK'));
+    switchTab('response');
+  }catch(e){
+    showJson({error:e.message},reqTitle);
+    showMeta('❌ '+e.message,true);
+    switchTab('response');
   }
 }
 
