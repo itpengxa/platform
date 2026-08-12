@@ -207,4 +207,71 @@
         FROM geo_region
         WHERE level = #{level}
     </select>
+
+    <!-- 包围盒近邻候选：应用层再算 Haversine 排序；需 idx_nearest_lat_lon / idx_nearest_country_level_lat -->
+    <select id="listInBoundingBox" resultType="com.caopan.platform.geo.entity.GeoRegion">
+        SELECT <include refid="RegionColumns"/>
+        FROM geo_region
+        WHERE status = 1
+          AND latitude IS NOT NULL
+          AND longitude IS NOT NULL
+          AND latitude BETWEEN #{minLat} AND #{maxLat}
+          AND longitude BETWEEN #{minLon} AND #{maxLon}
+        <if test="countryCode != null and countryCode != ''">
+          AND country_code = #{countryCode}
+        </if>
+        <if test="minLevel != null">
+          AND level &gt;= #{minLevel}
+        </if>
+        <if test="maxLevel != null">
+          AND level &lt;= #{maxLevel}
+        </if>
+        LIMIT #{limit}
+    </select>
+
+    <!-- 包围盒内按平面距离²预排序，减少拉回行数；精排仍用 Haversine -->
+    <select id="listNearestInBoundingBox" resultType="com.caopan.platform.geo.entity.GeoRegion">
+        SELECT <include refid="RegionColumns"/>
+        FROM geo_region
+        WHERE status = 1
+          AND latitude IS NOT NULL
+          AND longitude IS NOT NULL
+          AND latitude BETWEEN #{minLat} AND #{maxLat}
+          AND longitude BETWEEN #{minLon} AND #{maxLon}
+        <if test="countryCode != null and countryCode != ''">
+          AND country_code = #{countryCode}
+        </if>
+        <if test="minLevel != null">
+          AND level &gt;= #{minLevel}
+        </if>
+        <if test="maxLevel != null">
+          AND level &lt;= #{maxLevel}
+        </if>
+        ORDER BY (POW(latitude - #{lat}, 2) + POW(longitude - #{lon}, 2)) ASC
+        LIMIT #{limit}
+    </select>
+
+    <!-- SPATIAL：点表 MBR + ST_Distance_Sphere；MySQL 4326 轴序 lat,lon -->
+    <select id="listNearestSpatial" resultType="com.caopan.platform.geo.entity.GeoRegion">
+        SELECT r.id, r.parent_id AS parentId, r.country_code AS countryCode,
+               r.name, r.name_en AS nameEn, r.name_ch AS nameCh, r.code, r.level,
+               r.region_type AS regionType, r.path, r.is_leaf AS isLeaf,
+               r.latitude, r.longitude, r.source, r.source_id AS sourceId,
+               r.status, r.sort, r.created_at AS createdAt, r.updated_at AS updatedAt
+        FROM geo_region_point p
+        INNER JOIN geo_region r ON r.id = p.id AND r.status = 1
+        WHERE MBRContains(ST_GeomFromText(#{envelopeWkt}, 4326), p.location)
+          AND ST_Distance_Sphere(p.location, ST_SRID(POINT(#{lon}, #{lat}), 4326)) &lt;= #{maxDistanceM}
+        <if test="countryCode != null and countryCode != ''">
+          AND r.country_code = #{countryCode}
+        </if>
+        <if test="minLevel != null">
+          AND r.level &gt;= #{minLevel}
+        </if>
+        <if test="maxLevel != null">
+          AND r.level &lt;= #{maxLevel}
+        </if>
+        ORDER BY ST_Distance_Sphere(p.location, ST_SRID(POINT(#{lon}, #{lat}), 4326)) ASC
+        LIMIT #{limit}
+    </select>
 </mapper>

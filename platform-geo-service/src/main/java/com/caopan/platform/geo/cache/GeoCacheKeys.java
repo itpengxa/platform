@@ -18,10 +18,11 @@ public final class GeoCacheKeys {
     public static final String PATTERN_PATH = PREFIX + "path:*";
     public static final String PATTERN_REGION = PREFIX + "region:*";
     public static final String PATTERN_TREE = PREFIX + "tree:*";
+    public static final String PATTERN_REVERSE = PREFIX + "rev:*";
 
     /** 全量数据清理用的白名单前缀模式（严禁 platform:geo:* 一把梭） */
     public static final java.util.List<String> DATA_CLEAR_PATTERNS = java.util.List.of(
-            PATTERN_COUNTRIES, PATTERN_CHILDREN, PATTERN_PATH, PATTERN_REGION, PATTERN_TREE);
+            PATTERN_COUNTRIES, PATTERN_CHILDREN, PATTERN_PATH, PATTERN_REGION, PATTERN_TREE, PATTERN_REVERSE);
 
     /** 业务键目录（变量名 / 模板 / 参数），供管理端下拉。 */
     public static java.util.List<java.util.Map<String, Object>> catalog() {
@@ -38,6 +39,8 @@ public final class GeoCacheKeys {
     public static final Duration L2_PATH_TTL = Duration.ofHours(24);
     /** 子树 L2 TTL（相对更短，防大对象脏读） */
     public static final Duration L2_TREE_TTL = Duration.ofHours(12);
+    /** 经纬度反查短缓存 TTL（约 10m 网格） */
+    public static final Duration L2_REVERSE_TTL = Duration.ofSeconds(120);
 
     /** 工具类，禁止实例化 */
     private GeoCacheKeys() {
@@ -107,6 +110,32 @@ public final class GeoCacheKeys {
     }
 
     /**
+     * 经纬度反查短缓存键：坐标量化到约 10m 网格。
+     *
+     * @param gridLat     纬度网格
+     * @param gridLon     经度网格
+     * @param countryCode ISO2 或空
+     * @param lang        语言或空
+     */
+    public static String reverse(long gridLat, long gridLon, String countryCode, String lang) {
+        String cc = countryCode == null || countryCode.isBlank() ? "-" : countryCode.trim().toUpperCase();
+        String lg = lang == null || lang.isBlank() ? "-" : lang.trim().toLowerCase();
+        return PREFIX + "rev:" + cc + ":" + gridLat + ":" + gridLon + ":" + lg;
+    }
+
+    /**
+     * 约 10m 网格量化（1°≈111km → 10m≈9.0e-5°）。
+     */
+    public static long[] reverseGrid(double lat, double lon) {
+        final double cell = 0.00009d;
+        long gLat = Math.round(lat / cell);
+        double cos = Math.cos(Math.toRadians(lat));
+        double lonCell = cell / Math.max(0.2d, Math.abs(cos));
+        long gLon = Math.round(lon / lonCell);
+        return new long[]{gLat, gLon};
+    }
+
+    /**
      * 是否为地理数据缓存键（排除限流等）。
      */
     public static boolean isGeoDataKey(String key) {
@@ -121,6 +150,7 @@ public final class GeoCacheKeys {
                 || rest.startsWith("children:")
                 || rest.startsWith("path:")
                 || rest.startsWith("region:")
-                || rest.startsWith("tree:");
+                || rest.startsWith("tree:")
+                || rest.startsWith("rev:");
     }
 }

@@ -29,7 +29,8 @@
   var cfg = {
     clientCode: q.get('clientCode') || 'embed',
     clientName: q.get('clientName') || q.get('clientCode') || 'H5 Embed',
-    lang: q.get('lang') || 'en',
+    // 无 lang 参数 = 自动：不传语言给后端（走本地名）
+    lang: q.get('lang') || '',
     apiBase: q.get('apiBase') || '',
     // 宿主代签后注入的 token（优先使用，不再自动签发）；无 token 且未配 issueSecret 时，失效会通知宿主刷新
     token: q.get('token') || '',

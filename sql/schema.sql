@@ -58,7 +58,9 @@ CREATE TABLE geo_region (
   KEY idx_country_level (country_code, level),
   KEY idx_code (code),
   KEY idx_name (name(64)),
-  KEY idx_path (path(64))
+  KEY idx_path (path(64)),
+  KEY idx_nearest_lat_lon (latitude, longitude),
+  KEY idx_nearest_country_level_lat (country_code, status, level, latitude)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='行政区划树';
 
 -- ----------------------------

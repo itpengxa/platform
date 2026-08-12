@@ -8,7 +8,9 @@ import com.caopan.platform.common.exception.ErrorCode;
 import com.caopan.platform.geo.admin.support.RegionIdAllocator;
 import com.caopan.platform.geo.config.runtime.EffectiveReportSettings;
 import com.caopan.platform.geo.entity.GeoRegion;
+import com.caopan.platform.geo.entity.GeoRegionL5;
 import com.caopan.platform.geo.entity.GeoRegionReport;
+import com.caopan.platform.geo.mapper.GeoRegionL5Mapper;
 import com.caopan.platform.geo.mapper.GeoRegionMapper;
 import com.caopan.platform.geo.mapper.GeoRegionReportMapper;
 import com.caopan.platform.geo.service.support.GeoDataCache;
@@ -38,6 +40,7 @@ public class GeoReportService {
             ReportResultStatus.PARENT_NO_COORD);
 
     private final GeoRegionMapper geoRegionMapper;
+    private final GeoRegionL5Mapper geoRegionL5Mapper;
     private final GeoRegionReportMapper reportMapper;
     private final GeocodeClient geocodeClient;
     private final RegionIdAllocator idAllocator;
@@ -48,6 +51,7 @@ public class GeoReportService {
 
     public GeoReportService(
             GeoRegionMapper geoRegionMapper,
+            GeoRegionL5Mapper geoRegionL5Mapper,
             GeoRegionReportMapper reportMapper,
             GeocodeClient geocodeClient,
             RegionIdAllocator idAllocator,
@@ -56,6 +60,7 @@ public class GeoReportService {
             ReportRateLimiter rateLimiter,
             PlatformTransactionManager transactionManager) {
         this.geoRegionMapper = geoRegionMapper;
+        this.geoRegionL5Mapper = geoRegionL5Mapper;
         this.reportMapper = reportMapper;
         this.geocodeClient = geocodeClient;
         this.idAllocator = idAllocator;
@@ -84,7 +89,7 @@ public class GeoReportService {
         String nameEn = trimOptional(req.missingNameEn());
         GeoRegionReport report = newBaseReport(clientCode, parent, req, missingName);
 
-        if (geoRegionMapper.countSameNameUnderParent(parentId, missingName, nameEn, null) > 0
+        if (existsUnderParent(parent, missingName, nameEn)
                 || reportMapper.countByParentAndName(parentId, missingName) > 0) {
             report.setResultStatus(ReportResultStatus.ALREADY_EXISTS);
             return persistReport(report, false, null, "Region already exists under parent",
@@ -216,7 +221,7 @@ public class GeoReportService {
 
             String nameEn = trimOptional(req.missingNameEn());
             if (!ReportResultStatus.ALREADY_EXISTS.equals(report.getResultStatus())
-                    && (geoRegionMapper.countSameNameUnderParent(parent.getId(), missingName, nameEn, null) > 0
+                    && (existsUnderParent(parent, missingName, nameEn)
                     || reportMapper.countByParentAndName(parent.getId(), missingName) > 0)) {
                 report.setResultStatus(ReportResultStatus.ALREADY_EXISTS);
                 report.setRegionId(null);
@@ -242,7 +247,8 @@ public class GeoReportService {
 
     private Long autoCreateRegion(GeoRegion parent, ReportMissingRequest req, String missingName,
                                   ParentBelongingChecker.GeocodeResult geocode, LocalDateTime now) {
-        if (parent.getLevel() != null && parent.getLevel() >= 5) {
+        // 主表仅到 L4；父为 L4 时新建写入 geo_region_l5
+        if (parent.getLevel() == null || parent.getLevel() > 4) {
             throw new BizException(ErrorCode.PARENT_INVALID);
         }
         int level = parent.getLevel() + 1;
@@ -250,12 +256,55 @@ public class GeoReportService {
         for (int attempt = 0; attempt < 3; attempt++) {
             long newId = idAllocator.allocate(level);
             try {
+                if (level == 5) {
+                    return insertNewRegionL5(parent, req, missingName, geocode, now, newId);
+                }
                 return insertNewRegion(parent, req, missingName, geocode, now, newId, level);
             } catch (DuplicateKeyException e) {
                 lastDup = e;
             }
         }
         throw lastDup != null ? lastDup : new BizException(ErrorCode.SYSTEM_ERROR);
+    }
+
+    private boolean existsUnderParent(GeoRegion parent, String name, String nameEn) {
+        if (parent.getLevel() != null && parent.getLevel() == 4) {
+            return geoRegionL5Mapper.countSameNameUnderParent(parent.getId(), name, nameEn, null) > 0;
+        }
+        return geoRegionMapper.countSameNameUnderParent(parent.getId(), name, nameEn, null) > 0;
+    }
+
+    private Long insertNewRegionL5(GeoRegion parent, ReportMissingRequest req, String missingName,
+                                   ParentBelongingChecker.GeocodeResult geocode, LocalDateTime now,
+                                   long newId) {
+        String path = parent.getPath() + newId + "/";
+        GeoRegionL5 row = new GeoRegionL5();
+        row.setId(newId);
+        row.setParentId(parent.getId());
+        row.setCountryCode(parent.getCountryCode());
+        row.setName(missingName);
+        row.setNameEn(trimOptional(req.missingNameEn()));
+        row.setNameCh(trimOptional(req.missingNameCh()));
+        row.setLevel(5);
+        row.setRegionType("street");
+        row.setPath(path);
+        row.setIsLeaf(1);
+        row.setSource("user_report");
+        row.setStatus(1);
+        row.setSort(0);
+        if (geocode != null) {
+            row.setLatitude(BigDecimal.valueOf(geocode.lat()));
+            row.setLongitude(BigDecimal.valueOf(geocode.lng()));
+        }
+        row.setCreatedAt(now);
+        row.setUpdatedAt(now);
+        geoRegionL5Mapper.insert(row);
+
+        parent.setIsLeaf(0);
+        parent.setUpdatedAt(now);
+        geoRegionMapper.updateById(parent);
+        geoDataCache.evictAfterMutation(newId, parent.getId(), parent.getCountryCode());
+        return newId;
     }
 
     private Long insertNewRegion(GeoRegion parent, ReportMissingRequest req, String missingName,

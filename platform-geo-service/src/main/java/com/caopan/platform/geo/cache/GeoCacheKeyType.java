@@ -49,6 +49,18 @@ public enum GeoCacheKeyType {
                     new Param("rootId", "根节点 ID(可空→0)", false),
                     new Param("depth", "深度(可空→0)", false)
             )
+    ),
+    REVERSE(
+            "rev",
+            "经纬度反查(10m网格)",
+            "platform:geo:rev:{countryCode}:{gridLat}:{gridLon}:{lang}",
+            "platform:geo:rev:*",
+            List.of(
+                    new Param("countryCode", "国家 ISO2(可空→-)", false),
+                    new Param("gridLat", "纬度网格", true),
+                    new Param("gridLon", "经度网格", true),
+                    new Param("lang", "语言(可空→-)", false)
+            )
     );
 
     private final String code;
@@ -99,6 +111,11 @@ public enum GeoCacheKeyType {
                     requireIso2(p.get("countryCode")),
                     parseOptionalLong(p.get("rootId")),
                     parseOptionalInt(p.get("depth")));
+            case REVERSE -> GeoCacheKeys.reverse(
+                    requireLong(p.get("gridLat"), "gridLat"),
+                    requireLong(p.get("gridLon"), "gridLon"),
+                    trimToNull(p.get("countryCode")),
+                    trimToNull(p.get("lang")));
         };
     }
 
@@ -163,6 +180,14 @@ public enum GeoCacheKeyType {
         Long n = parseOptionalLong(raw);
         if (n == null || n <= 0) {
             throw new IllegalArgumentException(field + " 必须为正整数");
+        }
+        return n;
+    }
+
+    private static long requireLong(String raw, String field) {
+        Long n = parseOptionalLong(raw);
+        if (n == null) {
+            throw new IllegalArgumentException(field + " 必须为整数");
         }
         return n;
     }

@@ -53,7 +53,11 @@
 <div class="toolbar">
   <label>clientCode <input id="clientCode" value="demo" size="10"/></label>
   <label>lang
-    <select id="lang"><option value="en">en</option><option value="zh">zh</option></select>
+    <select id="lang">
+      <option value="">自动</option>
+      <option value="en">en</option>
+      <option value="zh">zh</option>
+    </select>
   </label>
   <button type="button" onclick="reloadPicker()">刷新预览</button>
   <button type="button" class="refresh-token" id="btnRefreshToken" onclick="refreshToken()">🔄 刷新 Token</button>
@@ -111,11 +115,12 @@
     const q = new URLSearchParams({
       clientCode: code,
       clientName: code,
-      lang: lang,
       embed: '1',
       autoClose: '0',
       _v: '1.1.7-' + Date.now()
     });
+    // 「自动」不传 lang，后端按本地名展示；显式 en/zh 才带语言参数
+    if (lang) q.set('lang', lang);
     // 注入当前有效 token，SDK 优先使用，不再走弱密钥自动签发
     if (currentToken) q.set('token', currentToken);
     return '/api/geo-picker.html?' + q.toString();

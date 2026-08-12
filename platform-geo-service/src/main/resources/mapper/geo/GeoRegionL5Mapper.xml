@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.caopan.platform.geo.mapper.GeoRegionL5Mapper">
+
+    <sql id="RegionColumns">
+        id, parent_id AS parentId, country_code AS countryCode,
+        name, name_en AS nameEn, name_ch AS nameCh, code, level,
+        region_type AS regionType, path, is_leaf AS isLeaf,
+        latitude, longitude, source, source_id AS sourceId,
+        status, sort, created_at AS createdAt, updated_at AS updatedAt
+    </sql>
+
+    <select id="findByIdAnyStatus" resultType="com.caopan.platform.geo.entity.GeoRegionL5">
+        SELECT <include refid="RegionColumns"/>
+        FROM geo_region_l5
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="countAdminPage" resultType="long">
+        SELECT COUNT(1)
+        FROM geo_region_l5
+        <where>
+            <if test="countryCode != null and countryCode != ''">
+                AND country_code = #{countryCode}
+            </if>
+            <if test="parentId != null">
+                AND parent_id = #{parentId}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+            <if test="source != null and source != ''">
+                AND source = #{source}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    name LIKE CONCAT('%', #{keyword}, '%')
+                    OR name_en LIKE CONCAT('%', #{keyword}, '%')
+                    OR name_ch LIKE CONCAT('%', #{keyword}, '%')
+                    OR code LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+        </where>
+    </select>
+
+    <select id="pageAdmin" resultType="com.caopan.platform.geo.entity.GeoRegionL5">
+        SELECT <include refid="RegionColumns"/>
+        FROM geo_region_l5
+        <where>
+            <if test="countryCode != null and countryCode != ''">
+                AND country_code = #{countryCode}
+            </if>
+            <if test="parentId != null">
+                AND parent_id = #{parentId}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+            <if test="source != null and source != ''">
+                AND source = #{source}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (
+                    name LIKE CONCAT('%', #{keyword}, '%')
+                    OR name_en LIKE CONCAT('%', #{keyword}, '%')
+                    OR name_ch LIKE CONCAT('%', #{keyword}, '%')
+                    OR code LIKE CONCAT('%', #{keyword}, '%')
+                )
+            </if>
+        </where>
+        ORDER BY id ASC
+        LIMIT #{offset}, #{limit}
+    </select>
+
+    <select id="countSameNameUnderParent" resultType="long">
+        SELECT COUNT(1)
+        FROM geo_region_l5
+        WHERE parent_id = #{parentId}
+          AND (
+            name = #{name}
+            <if test="nameEn != null and nameEn != ''">
+                OR name_en = #{nameEn}
+            </if>
+          )
+        <if test="excludeId != null">
+            AND id != #{excludeId}
+        </if>
+    </select>
+
+    <select id="nextId" resultType="long">
+        SELECT COALESCE(MAX(id), 499999999) + 1
+        FROM geo_region_l5
+    </select>
+</mapper>

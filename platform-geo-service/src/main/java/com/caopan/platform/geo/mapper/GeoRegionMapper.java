@@ -107,4 +107,54 @@ public interface GeoRegionMapper extends BaseMapper<GeoRegion> {
                                   @Param("excludeId") Long excludeId);
 
     Long nextIdForLevel(@Param("level") int level);
+
+    /**
+     * 经纬度包围盒内启用区划（须带 lat/lng）；用于本库近邻反查。
+     *
+     * @param minLat      纬度下界
+     * @param maxLat      纬度上界
+     * @param minLon      经度下界
+     * @param maxLon      经度上界
+     * @param countryCode 可选 ISO2
+     * @param minLevel    可选最小层级（含）
+     * @param maxLevel    可选最大层级（含）
+     * @param limit       条数上限
+     */
+    List<GeoRegion> listInBoundingBox(@Param("minLat") double minLat,
+                                      @Param("maxLat") double maxLat,
+                                      @Param("minLon") double minLon,
+                                      @Param("maxLon") double maxLon,
+                                      @Param("countryCode") String countryCode,
+                                      @Param("minLevel") Integer minLevel,
+                                      @Param("maxLevel") Integer maxLevel,
+                                      @Param("limit") int limit);
+
+    /**
+     * 包围盒内按平面近似距离排序取最近若干条（再由应用层用 Haversine 精排）。
+     */
+    List<GeoRegion> listNearestInBoundingBox(@Param("lat") double lat,
+                                             @Param("lon") double lon,
+                                             @Param("minLat") double minLat,
+                                             @Param("maxLat") double maxLat,
+                                             @Param("minLon") double minLon,
+                                             @Param("maxLon") double maxLon,
+                                             @Param("countryCode") String countryCode,
+                                             @Param("minLevel") Integer minLevel,
+                                             @Param("maxLevel") Integer maxLevel,
+                                             @Param("limit") int limit);
+
+    /**
+     * 基于 location(POINT SRID 4326) + SPATIAL INDEX 的近邻查询。
+     * 需先执行 sql/geo_nearest_spatial_006.sql。
+     *
+     * @param envelopeWkt MBR 多边形 WKT，坐标序 lon lat
+     */
+    List<GeoRegion> listNearestSpatial(@Param("lat") double lat,
+                                       @Param("lon") double lon,
+                                       @Param("envelopeWkt") String envelopeWkt,
+                                       @Param("maxDistanceM") double maxDistanceM,
+                                       @Param("countryCode") String countryCode,
+                                       @Param("minLevel") Integer minLevel,
+                                       @Param("maxLevel") Integer maxLevel,
+                                       @Param("limit") int limit);
 }
